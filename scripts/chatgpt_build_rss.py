@@ -13,6 +13,9 @@ if not OPENAI_API_KEY:
     print("Missing OPENAI_API_KEY secret.", file=sys.stderr)
     sys.exit(1)
 
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")  # optional
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")            # optional
+
 CONFIG_PATH = "sources.yml"
 
 def load_cfg(path=CONFIG_PATH):
@@ -52,6 +55,73 @@ def strip_html(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+def extract_first_image_from_entry(entry, summary_html):
+    # Try standard fields in feedparser first
+    if getattr(entry, "media_content", None):
+        for m in entry.media_content:
+            url = m.get("url")
+            if url:
+                return url
+    if getattr(entry, "media_thumbnail", None):
+        for m in entry.media_thumbnail:
+            url = m.get("url")
+            if url:
+                return url
+    if getattr(entry, "enclosures", None):
+        for enc in entry.enclosures:
+            if isinstance(enc, dict) and enc.get("href", "").startswith("http"):
+                return enc["href"]
+
+    # Fallback: parse <img src="..."> from summary HTML
+    if summary_html:
+        m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary_html, flags=re.I)
+        if m:
+            return m.group(1)
+    return None
+
+def find_external_image(query):
+    # Prefer Unsplash if key provided, else Pexels, else None
+    query = query.strip()
+    if not query:
+        return None
+
+    if UNSPLASH_ACCESS_KEY:
+        try:
+            resp = requests.get(
+                "https://api.unsplash.com/search/photos",
+                params={"query": query, "per_page": 1},
+                headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("results"):
+                    # choose 'urls'->'regular' or 'small'
+                    url = data["results"][0]["urls"].get("regular") or data["results"][0]["urls"].get("small")
+                    return url
+        except Exception:
+            pass
+
+    if PEXELS_API_KEY:
+        try:
+            resp = requests.get(
+                "https://api.pexels.com/v1/search",
+                params={"query": query, "per_page": 1},
+                headers={"Authorization": PEXELS_API_KEY},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                photos = data.get("photos") or []
+                if photos:
+                    src = photos[0].get("src", {})
+                    url = src.get("large") or src.get("medium") or src.get("original")
+                    return url
+        except Exception:
+            pass
+
+    return None
+
 def contains_keywords(text, keywords):
     if not text:
         return False
@@ -62,6 +132,8 @@ def gather_tg(cfg):
     lookback_h = int(cfg["rules"].get("telegram_lookback_hours", 24))
     since_utc = datetime.now(timezone.utc) - timedelta(hours=lookback_h)
     kw = [k.lower() for k in cfg["rules"].get("fundraising_filter_keywords", [])]
+    placeholder_image = (cfg.get("images") or {}).get("placeholder_image")
+    enable_external = (cfg.get("images") or {}).get("enable_external_images", True)
 
     out = {"fact_summary": [], "full_no_opinion": [], "raw": []}
     for mode in ("fact_summary", "full_no_opinion", "raw"):
@@ -84,13 +156,25 @@ def gather_tg(cfg):
                 m = re.search(r"/telegram/channel/([^/?#]+)", url)
                 channel = m.group(1) if m else url
 
+                # Choose image: first from post, else external, else placeholder
+                image_url = extract_first_image_from_entry(e, summary_html)
+                if not image_url and enable_external:
+                    # Build a short query: channel + trimmed title (or first 6 words of text)
+                    base_query = title.strip() or "новости пост телеграм"
+                    if not base_query:
+                        base_query = "новости"
+                    image_url = find_external_image(f"{channel} {base_query}")
+                if not image_url:
+                    image_url = placeholder_image
+
                 out[mode].append({
                     "channel": channel,
                     "title": title.strip() or f"Пост @{channel}",
                     "link": link,
                     "summary_html": summary_html,
                     "summary_text": txt,
-                    "published": pub.isoformat()
+                    "published": pub.isoformat(),
+                    "image": image_url,
                 })
     return out
 
@@ -123,25 +207,19 @@ def main():
 
     tg = gather_tg(cfg)
 
-    # Opinion markers for RU + UK (used by ChatGPT to remove subjective sentences in full_no_opinion mode)
     opinion_markers = [
-        # Russian
-        "я думаю", "по моему мнению", "мне кажется", "я считаю", "как по мне",
-        "на мой взгляд", "по-моему", "лично я", "я уверен", "думаю",
-        # Ukrainian
-        "я думаю", "на мою думку", "мені здається", "я вважаю", "як на мене",
-        "на мій погляд", "по-моєму", "особисто я", "я впевнений", "гадаю",
-        # English common
-        "i think", "in my opinion", "i believe", "personally", "seems to me"
+        "я думаю","по моему мнению","мне кажется","я считаю","как по мне","на мой взгляд","по-моему","лично я","я уверен","думаю",
+        "я думаю","на мою думку","мені здається","я вважаю","як на мене","на мій погляд","по-моєму","особисто я","я впевнений","гадаю",
+        "i think","in my opinion","i believe","personally","seems to me"
     ]
 
     rules_text = (
-        "Сформируй один RSS 2.0 (один канал). Для Telegram-постов действуют режимы:\n"
-        "- fact_summary: для каждого поста сделай краткое фактическое резюме 3–5 предложений на русском или украинском (в зависимости от языка поста). Включай даты, цифры, имена, географию; полностью убери личные оценки/мнения автора.\n"
-        "- full_no_opinion: выведи полный текст поста (рус./укр.), но удали предложения с личными оценками/мнениями. Считай субъективными любые фразы с маркерами: "
-        + "; ".join(opinion_markers) + ". Сохрани факты, цитаты и нейтральные формулировки.\n"
-        "- raw: без изменений; можно минимально очистить HTML.\n"
-        "Для каждого item добавляй: <title> (оригинал или первая строка), <category> с именем канала, локальное время публикации America/Los_Angeles (YYYY-MM-DD HH:MM) в описании либо начале текста, <link>, <description> по режиму. Если доступно изображение — добавь <enclosure> с ссылкой.\n"
+        "Сформируй один RSS 2.0 (один канал). Режимы:\n"
+        "- fact_summary: краткое фактическое резюме 3–5 предложений (на языке поста RU/UK), только факты.\n"
+        "- full_no_opinion: полный текст (RU/UK), но удали предложения с личными оценками (маркеры: "
+        + "; ".join(opinion_markers) + "). Сохрани факты/цифры/даты/цитаты.\n"
+        "- raw: без изменений. Если передан image — добавь <enclosure>.\n"
+        "Для каждого item добавляй: <title>, <category> с именем канала, локальное время America/Los_Angeles (YYYY-MM-DD HH:MM) в начале description, <link>, затем содержимое по режиму, и <enclosure> с image, если он есть.\n"
         "Верни только валидный XML, начиная с <?xml ...>, без пояснений."
     )
 
@@ -149,9 +227,9 @@ def main():
         "output": {
             "type": "rss2.0",
             "channel": {
-                "title": "Telegram дайджест (RU+UK правила)",
+                "title": "Telegram дайджест (с изображениями)",
                 "link": "https://magetarro.github.io/news/rss.xml",
-                "description": "Сводный Telegram-дайджест с правилами для RU/UK: fact summary, full без мнений, и raw.",
+                "description": "Сводный Telegram-дайджест: fact summary, full без мнений, raw; с картинками (первая из поста, иначе подобранная/заглушка).",
                 "language": "ru"
             }
         },
