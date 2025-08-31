@@ -1,66 +1,63 @@
-timezone: "America/Los_Angeles"
+images:
+  enable_external_images: true
+  placeholder_image: https://via.placeholder.com/1200x630.png?text=Telegram+Digest
 publish_hour_local: 8
-
-topics: {}  # тематические RSS-источники можно добавить позже
-
-telegram:
-  # RSSHub endpoints (full URLs)
-  fact_summary:
-    - "https://rsshub.app/telegram/channel/ShrikeNews"
-    - "https://rsshub.app/telegram/channel/Yzheleznyak"
-    - "https://rsshub.app/telegram/channel/Zvizdecmanhustu"
-  full_no_opinion:
-    - "https://rsshub.app/telegram/channel/Mccartneyser68"
-  raw:
-    - "https://rsshub.app/telegram/channel/babchenko77"
-    - "https://rsshub.app/telegram/channel/resurgammmm"
-
 rules:
-  exclude_languages: ["ru"]  # для тематических источников (здесь пусто)
   exclude_domains_ru_affiliated: true
-  summaries_ru_sentences: [3, 5]
-  telegram_lookback_hours: 24
-
-  # Bilingual (RU + UK) fundraising filter keywords
+  exclude_languages:
+  - ru
   fundraising_filter_keywords:
-    # Russian
-    - "донат"
-    - "донаты"
-    - "донатить"
-    - "сбор средств"
-    - "сбор на"
-    - "собираем на"
-    - "поддержать канал"
-    - "поддержать автора"
-    - "пожертвования"
-    - "пожертвовать"
-    - "реквизиты"
-    - "карта *"
-    - "картой *"
-    - "перевод на карту"
-    - "qiwi"
-    # Ukrainian
-    - "донат"
-    - "донати"
-    - "донатити"
-    - "збір коштів"
-    - "збір на"
-    - "збираємо на"
-    - "підтримати канал"
-    - "підтримати автора"
-    - "пожертви"
-    - "пожертва"
-    - "реквізити"
-    - "переказ на картку"
-    # English/intl
-    - "donate"
-    - "donation"
-    - "patreon"
-    - "boosty"
-    - "buymeacoffee"
-    - "fundraiser"
-    - "send money"
-    - "paypal.me"
-    - "crypto:"
-    - "btc:"
-    - "usdt"
+  - донат
+  - донаты
+  - донатить
+  - сбор средств
+  - сбор на
+  - собираем на
+  - поддержать канал
+  - поддержать автора
+  - пожертвования
+  - пожертвовать
+  - реквизиты
+  - карта *
+  - картой *
+  - перевод на карту
+  - qiwi
+  - донат
+  - донати
+  - донатити
+  - збір коштів
+  - збір на
+  - збираємо на
+  - підтримати канал
+  - підтримати автора
+  - пожертви
+  - пожертва
+  - реквізити
+  - переказ на картку
+  - donate
+  - donation
+  - patreon
+  - boosty
+  - buymeacoffee
+  - fundraiser
+  - send money
+  - paypal.me
+  - 'crypto:'
+  - 'btc:'
+  - usdt
+  summaries_ru_sentences:
+  - 3
+  - 5
+  telegram_lookback_hours: 24
+telegram:
+  fact_summary:
+  - https://rsshub.app/telegram/channel/ShrikeNews
+  - https://rsshub.app/telegram/channel/Yzheleznyak
+  - https://rsshub.app/telegram/channel/Zvizdecmanhustu
+  full_no_opinion:
+  - https://rsshub.app/telegram/channel/Mccartneyser68
+  raw:
+  - https://rsshub.app/telegram/channel/babchenko77
+  - https://rsshub.app/telegram/channel/resurgammmm
+timezone: America/Los_Angeles
+topics: {}
