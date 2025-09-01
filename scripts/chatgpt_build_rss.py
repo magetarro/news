@@ -178,7 +178,7 @@ def gather_tg(cfg):
                 })
     return out
 
-def openai_chat(messages, model="gpt-5-thinking", temperature=0):
+def openai_chat(messages, model="gpt-5", temperature=0):
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": model, "messages": messages, "temperature": temperature}
