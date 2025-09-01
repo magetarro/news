@@ -243,7 +243,7 @@ def main():
         {"role": "user", "content": json.dumps(input_json, ensure_ascii=False)}
     ]
 
-    rss_xml = openai_chat(messages, model="gpt-5-thinking", temperature=0)
+    rss_xml = openai_chat(messages, model="gpt-5", temperature=0)
 
     ok, err = validate_xml(rss_xml)
     if not ok:
