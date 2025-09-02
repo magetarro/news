@@ -207,7 +207,6 @@ def gather_tg(cfg):
     lookback_h = int(cfg["rules"].get("telegram_lookback_hours", 24))
     since_utc = datetime.now(timezone.utc) - timedelta(hours=lookback_h)
 
-    # Ключевые слова теперь используем для РЕДАКТИРОВАНИЯ, а не для удаления постов
     redact_kw = [k.lower() for k in (
         cfg["rules"].get("redact_fundraising_keywords") or
         cfg["rules"].get("fundraising_filter_keywords") or []
@@ -220,11 +219,9 @@ def gather_tg(cfg):
 
     for mode in ("fact_summary", "full_no_opinion", "raw"):
         for url in cfg["telegram"].get(mode, []):
-        feed = fetch_rss(url)
-        entries = getattr(feed, "entries", []) or []
-        for e in entries:
-    # ... same as before
-
+            feed = fetch_rss(url)
+            entries = getattr(feed, "entries", []) or []
+            for e in entries:
                 pub = parse_time(e)
                 if pub < since_utc:
                     continue
@@ -234,14 +231,12 @@ def gather_tg(cfg):
                 summary_html = getattr(e, "summary", "") or getattr(e, "description", "") or ""
                 txt = strip_html(summary_html + " " + title)
 
-                # ВАЖНО: НЕ удаляем пост — редактируем его, вырезая донаты/реквизиты
+                # Редактируем, убираем донаты
                 txt = redact_fundraising(txt, redact_kw)
 
-                # channel name из URL
                 m = re.search(r"/telegram/channel/([^/?#]+)", url)
                 channel = m.group(1) if m else url
 
-                # image
                 image_url = extract_first_image_from_entry(e, summary_html)
                 if not image_url and enable_external:
                     base_query = title.strip() or "новости пост телеграм"
@@ -254,10 +249,12 @@ def gather_tg(cfg):
                     "title": title.strip() or f"Пост @{channel}",
                     "link": link,
                     "summary_html": summary_html,
-                    "summary_text": txt,    # ← кладём уже «очищенный» текст
+                    "summary_text": txt,
                     "published": pub.isoformat(),
                     "image": image_url,
                 })
+            # чуть притормозим между каналами, чтобы не ловить 429
+            time.sleep(0.4 + random.uniform(0, 0.4))
 
     total = sum(len(out[k]) for k in out)
     print("[gather_tg] fact_summary:", len(out["fact_summary"]),
@@ -266,7 +263,6 @@ def gather_tg(cfg):
     by_channel = Counter([it["channel"] for mode in out for it in out[mode]])
     print("[gather_tg] by channel:", dict(by_channel))
     return out
-
 
 # --------------------- OpenAI call ---------------------
 
