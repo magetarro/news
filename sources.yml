@@ -1,7 +1,7 @@
 images:
   enable_external_images: true
   placeholder_image: https://via.placeholder.com/1200x630.png?text=Telegram+Digest
-publish_hour_local: 15
+publish_hour_local: 8
 rules:
   exclude_domains_ru_affiliated: true
   exclude_languages:
@@ -46,7 +46,7 @@ rules:
   - 'btc:'
   - usdt
   summaries_ru_sentences:
-  - 3
+  - 4
   - 5
   telegram_lookback_hours: 24
 telegram:
