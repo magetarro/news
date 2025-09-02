@@ -1,9 +1,154 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Telegram дайджест (с изображениями)</title>
+    <title>Telegram дайджест (fallback)</title>
     <link>https://magetarro.github.io/news/rss.xml</link>
-    <description>Сводный Telegram-дайджест: fact summary, full без мнений, raw; с картинками (первая из поста, иначе подобранная/заглушка).</description>
+    <description>Резервная сборка без LLM</description>
     <language>ru</language>
+    <lastBuildDate>Tue, 02 Sep 2025 10:00:56 -0700</lastBuildDate>
+    <item>
+      <title>🖼 🛢Еженедельная аналитика от Bloomberg.</title>
+      <link>https://t.me/ShrikeNews/25055</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756822667</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 14:17:47 +0000</pubDate>
+      <description><![CDATA[2025-09-02 07:17 — 🛢 Еженедельная аналитика от Bloomberg. В середине августа был трижды поражен нефтепровод "Дружба", от которого идет ветка к порту Усть-Луга. Поэтому было интересно посмотреть, как это сказалось на отгрузках нефти из этого порта. 1) На позапрошлой неделе отгрузки снизились с обычных 5 танкеров до 2. А на прошлой загрузили 3 танкера.]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/cY_KD-gSOd8MC3cvkp2w4SaZnWhrDbg5inxOWrZMPoV-Tloa_iIsE__FfwGEijr5LYSVZ-5Xu0Pmiv6l6MV931yflInUVcBtX7kErnW0UakU6qbH2LiihDUVx76Xx4DsR1f6UkkiSYL1c_E9BWv6RybIhdVYL6kzKm2sgxPib23S_tfkZBbV05FTrmMGH7InwHC5VKjVt1-fDOJpu3Do1rkRvzDzdZLFINJ1myvAIlVBz6_8oc6mtgsV2wiD3PjUJm7b2PiW90rsU0XK_QchXSyR1kcClfNS1r0YK3UlhCJrQSSIlGu13ygvyxyprbZeiacgfkI3-Ew1Hyc1W_h7eg.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 Убивство Парубія: син підозрюваного може бути військовим, про якого написали к...</title>
+      <link>https://t.me/ShrikeNews/25052</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756820110</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 13:35:10 +0000</pubDate>
+      <description><![CDATA[2025-09-02 06:35 — Убивство Парубія: син підозрюваного може бути військовим, про якого написали книгу - Громадське Після затримання підозрюваного Михайла Сцельнікова в українських медіа циркулювала інформація, що мотивом убивства Парубія може бути угода нападника з російськими спецслужбами. Мовляв, ті запропонували Сцельнікову повернути тіло його безвісти зниклого сина, якщо той ліквідує будь-якого відомого українського політика. За даними розслідувачів hromadske, цим зниклим сином може бути 30-річний Михайло-Віктор Сцельніков. Мати чоловіка — журналістка та фотохудожниця зі Львова Олена Чернінька. Минулого року вона презентувала книгу «Лемберґ: мамцю, ну не плач» — історії та звернення до зниклого на війні сина, на позивний Лемберґ.]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/C0Od1vUoXTJzhS50zZqcVsjmSKcoajUiKlWJNYFnvhv8cCB4_PXYHq1kQ2z1jRW1yhuTy8y_YwhJh44P-jvGnTVHAY9cf2lSkH4fTJIlP3fce5UtExcBFzCLpZ-hLSFkO4x7x_rMsxKKExCNQQhp2t85uuHn4Wxgeg7S9JIFlhEq5zu--39Z3XC298yM6mExp0z_awhDGhs1A8mUFi1WfJ1c_8uDmfesTkrYjA0BtXTJ9im34B0yrp9S0jb2nYQ9RSgIbZX-xIjtgbGacPo6HDTE6FphdDjXfYQ6Yj1cf5JnxD77YKNEWGWvCF65BvVvF9hUS-Zxceveago6XzSalQ.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🎬 ❗️Подозреваемый в убийстве Парубия признался, что действительно его убил.</title>
+      <link>https://t.me/ShrikeNews/25051</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756808051</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 10:14:11 +0000</pubDate>
+      <description><![CDATA[2025-09-02 03:14 — ❗️ Подозреваемый в убийстве Парубия признался, что действительно его убил. Еще говорит: ▪️ Это его "месть украинской власти". ▪️ Связь с российскими спецслужбами отрицает. ▪️ Все, что он хочет - чтобы ему вынесли приговор, а затем обменяли в Россию, чтобы он мог найти тело своего погибшего на войне сына. ▪️ Парубия убил просто потому, что тот был рядом.]]></description>
+      <enclosure url="https://via.placeholder.com/1200x630.png?text=Telegram+Digest" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 Ну а этот еблан рад порассматривать «верхний» мир глазами, залитыми российским...</title>
+      <link>https://t.me/ShrikeNews/25050</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756807314</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 10:01:54 +0000</pubDate>
+      <description><![CDATA[2025-09-02 03:01 — Ну а этот еблан рад порассматривать «верхний» мир глазами, залитыми российским баблом. 🖼 Ну а этот еблан рад порассматривать «верхний» мир глазами, залитыми российским...]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/AObqxGI1G1wTjM4Zj_JPs84o1HTHeytn0HQAkvqbucri0mWabigYayon3UgRhsvGA9MJAo_4_TyeTxSmWsui9aDMHbcNqNdpB8EBn1QgvtmfB_BnukYW0BavDIWs0m-U5frmTiIl6lRY-nCp42W4X-a0sB-XRSonTac3GFXqCCCS3Koj8MdRVWsswExMyd8N_QHDTFa9hscnzwGOtVcnpmm8UgILK3SMfAdKzhRqgf28I7w8fleMgla04eyVYgu-Kf1YTysFEJ06Q9nzwDNPbb_j8bcGr-IPVscxIwFmdcst8G_Z47_9O29eRNxRZvwQIvtM3qp1dR2XEPLyqual4Q.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 Путин две недели игнорил Трампа, ходил за ручку с Моди. А теперь решил отправить...</title>
+      <link>https://t.me/ShrikeNews/25049</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756806880</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 09:54:40 +0000</pubDate>
+      <description><![CDATA[2025-09-02 02:54 — Путин две недели игнорил Трампа, ходил за ручку с Моди. А теперь решил отправить ему пару подмигиваний, используя Фицо в качестве реквизита. Абьюзивные отношения в чистом виде. 🖼 Путин две недели игнорил Трампа, ходил за ручку с Моди. А теперь решил отправить...]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/mOaBcyzvkb3n6iEBKnfxlY3dmVkXA_hObE_5eCN4M-Xlj2ImExNYcTwHXst6Yz-xM2034MId_k__QtBbZ6pvpw-DBuxbSRv62xrpoCK8Fhkler0mNVgoTL8JT-y9ecZi0fN9lcnEKwJOrMQ8mLaAHgXZWcbi6eJoYnngtnmRldWUovJo0mhftJ6LaekWp3ran96S08IZ_zGl-2zj-WmwF69ijASvT7rkQY0qQ-TaMsNT7piTJGGurW6_RxTFT5no5kToEfxr3wTQm-CrAIcuPOLKHzmVT45WgioMsIE3wOB5PgC7raSRDwGDE4HYulj-V71OhIR3Lr_3ZygTYaVWfw.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>↩️🖼 Виктор Федорыч, перелогиньтесь</title>
+      <link>https://t.me/ShrikeNews/25048</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756806328</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 09:45:28 +0000</pubDate>
+      <description><![CDATA[2025-09-02 02:45 — Шрайк Ньюс : Это настолько бессмысленно, что даже нет смысла как-то комментировать. Ну разве что полюбоваться вставной челюстью можно. Кстати, завгару уже 75 годиков. Виктор Федорыч, перелогиньтесь ↩️🖼 Виктор Федорыч, перелогиньтесь]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/vcbuZ5-ZfnquYIgaZFK8m_SbDpAmu8xXtOA6Yl_Bcz6Eb2yn8XzWHoLAC_fbVlJ6FpfgpSG0RYEWdQGvvUIkSv_qOr-pC_IeUj_hf_-yQR2Gkl3Az1e_xR5UaQrhT41G5nNygOW6pV1kZnUv8_o9g8euWg17hhWY8jgaeL4SynunENxvzioYZF309Kybk7RvK47skE1DWy4hB6iD4J0b0H0Cyn1M5j0osb7lZIv4RtFy-BWMVQfZ1BXRSEpBFAxdMbplmXohU-faXpV-6jMHLZeWu7peZGZeRx5LnODx4BOsiIrxPrvaYL7bPrJsZyqtz-Ez0DkeqknFPF-kNJZCzQ.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 Ясно</title>
+      <link>https://t.me/ShrikeNews/25047</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756805947</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 09:39:07 +0000</pubDate>
+      <description><![CDATA[2025-09-02 02:39 — Ясно 🖼 Ясно]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/S9vtzpdpNmu_GgGqGLNM2s_LAibyw5WBaBt23EDvJMjlgOYBdcSCmkXh9KH5KyQ_GD7YF2djOmBhTpdzCm97dVENw3K-62PvkTIpLlI1KgJZDaoS7ytsj7ddjLOBGVAGpUQACu7uIRBWyzXvA9BhgRhSpDtVaYfm8jK6112z7BtDlfMmdvd4RACBsMO7dgYsTYi5fXZMv7rebZqR-HXGtxcKjET8ZJ3Sg8ytrd9PRehIE99zZFv7OYVZNRJx9qA47bNJJwKfHJoJj5nRrAQwWQJNI89DwaZtoFj2MlvyKgvEWkIj_oothmmWCnpqiUQR35zYFqSGf0eSlBFjLmGf-g.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🎬🖼 Вчера Генштаб сообщил, что 425-й штурмовой полк "Скеля" освободил Новоэкономич...</title>
+      <link>https://t.me/ShrikeNews/25044</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756802820</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 08:47:00 +0000</pubDate>
+      <description><![CDATA[2025-09-02 01:47 — Вчера Генштаб сообщил, что 425-й штурмовой полк "Скеля" освободил Новоэкономическое, а сегодня, что этот же полк зачистил Удачное. Оба поселка находятся возле Покровска. На карте Дипов такие изменения не внесены. Полк "Скеля" входит в "пожарную команду Сырского", состоящую из пяти штурмовых полков. 🎬🖼 Вчера Генштаб сообщил, что 425-й штурмовой полк "Скеля" освободил Новоэкономич...]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/fEO9C2DVaCV4LifQb49MO7WX8us09faA3XbB0q7powaKFheEWj9eBNaqAv0earbjnkL5nLGG2-_MXP_rMVAVjb99yj3LqKKnSDzbTOVkpmEJsXJFxCLm7-YZ0RtK6D99LTjkMkElFWQEqVCueVGLV9aZY4FPKWeGhmyXKjsmknCHjZ0kUAGzE7k3BZPeeNk02cgXRd7VRlV8oyTBaUN9UlGpo9fKPQvjsEVNN0OXrS82tefCiet8pfkDXPaLV9Op326jO-w61g5e2vA9FNXEvqaoH_KzcLqQJo80sUIseif60vBau6VXpZWkRMxrcLjozNXnAXK631otg1vtyewRBg.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 Сегодняшние #изменения на карте:</title>
+      <link>https://t.me/ShrikeNews/25042</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756801829</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 08:30:29 +0000</pubDate>
+      <description><![CDATA[2025-09-02 01:30 — Сегодняшние #изменения на карте: 1) #ВеликийБурлук 2) #Новопавлівка DeepState: Ворог окупував Воскресенку, а також просунувся поблизу Маліївки та Кам'янки. Уточнено ситуацію поблизу Дачного. -10.3 км² за день. Для ориентира : В августе российские войска продвигались со средней скоростью 15 км² в день. 🖼 Сегодняшние #изменения на карте:]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/ZaFAdbUZyMOwOuoU5Mrt1xiVOI5sm4oMHZYNYKxbdbroeITueK9z6A9zHdjJ5PWDTPNxX_-DjcBuxUFWZ123rzeQ4dI2oe4WgZ7aFdUsem3bkqi_Z7vc1ZnyQJvwxHvnlvWDDVakGbhxXxX-kEY3DYMVhC1tIT-kvAxaBftgKajJ42XQD52GXj0NZzkq9wK748MAzL0Rgv4yage3iCSQ5LsSCNvKPzEvlygGSsbwmd_EEOH6LT7U-FzgG5oAIPiCaYFQ7PfNIwyeF86IgETexQ_CwX5vPFeWzOurhWmc8fxlfcDFTSMg4Tv_7kr_j2UpyyMQE38Coa_bd5MzU-cCiw.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>Вчера-позавчера постил статистику с итогами августа. Вот самое на мой взгляд инте...</title>
+      <link>https://t.me/ShrikeNews/25041</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756798180</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 07:29:40 +0000</pubDate>
+      <description><![CDATA[2025-09-02 00:29 — Вчера-позавчера постил статистику с итогами августа. Вот самое на мой взгляд интересное: 🥇 Группировка СБС накрошила рекордное для себя количество йобликов. 🥇 Канал "Горюшко" насчитал рекордное количество некрологов российских солдат. 🤷‍♂️ По данным Генштаба потери личного состава армии РФ были минимальными за последние 16 месяцев. 📉 Шахедов и обманок запустили меньше , чем в июне и июле.]]></description>
+      <enclosure url="https://via.placeholder.com/1200x630.png?text=Telegram+Digest" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🔁🖼 🍞 Супутникові знімки результатів знищення насосних станцій на НПС «Унєча»</title>
+      <link>https://t.me/ShrikeNews/25040</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756796659</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 07:04:19 +0000</pubDate>
+      <description><![CDATA[2025-09-02 00:04 — Forwarded From Dnipro Osint ⟨ Гарбуз ⟩ 🍞 Супутникові знімки результатів знищення насосних станцій на НПС «Унєча» Ударами виведено з ладу більшість установок перекачки 🅰 Dnipro Osint | Чат 🔁🖼 🍞 Супутникові знімки результатів знищення насосних станцій на НПС «Унєча»]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/M0_Qm97INvRseX3GrNlObxwgHxEDFFy_c-U_4FQu5i2obkBnIDfRrNKOWBsUHHfJYDDHQQNI_CRrLRUuDe67A6SOFMRkhMGdDiT_Jr6Q9Ai0R0qAMVdAkGhcZ8pr5iZhhawUNp3lZgIa_r2BW5Z12OY8U-jOQa5gH7XYMNBv854kz1oAQ8tkg6XZVMloyf3i1W2Fz1-L8iDHhAUtrL23uoYJuuvaXzWfnhLsmSVxaekrf0fpOHtvS5n9da5PLeezM60cDeQgrz8gFaRU2v08j2cLoseD1u--nHqo2lE22u3rpv35AMvQKrtdyG9MuBK3c-dNCP0iKM6RueBgtkEZrA.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>⚡️Загальні бойові #втрати противника на 2 вересня 2025 року орієнтовно склали:</title>
+      <link>https://t.me/ShrikeNews/25039</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756788624</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Tue, 02 Sep 2025 04:50:24 +0000</pubDate>
+      <description><![CDATA[2025-09-01 21:50 — ⚡️ Загальні бойові #втрати противника на 2 вересня 2025 року орієнтовно склали: • особ. склад: 1 083 790 (+800) • танки: 11 156 (+1) • ББМ: 23 233 (+4) • артсистеми: 32 301 (+53) 🔥 • РСЗВ: 1 477 (+1) • засоби ППО: 1 213 • літаки: 422 • гелікоптери: 341 • БПЛА: 55 446 (+170) 🔥 • ракети: 3 664 • кораблі/катери: 28 • підводні човни: 1 • автотехніка: 60 488 (+89) • спецтехніка: 3 952 Генштаб ЗСУ ⚡️Загальні бойові #втрати противника на 2 вересня 2025 року орієнтовно склали:]]></description>
+      <enclosure url="https://via.placeholder.com/1200x630.png?text=Telegram+Digest" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>↩️ Ого! Наконец-то будет нихуя.</title>
+      <link>https://t.me/ShrikeNews/25037</link>
+      <guid isPermaLink="false">urn:tg:ShrikeNews:1756757180</guid>
+      <category>ShrikeNews</category>
+      <pubDate>Mon, 01 Sep 2025 20:06:20 +0000</pubDate>
+      <description><![CDATA[2025-09-01 13:06 — In Factum : Міністр фінансів США Бессент: 💬 Коли європейські лідери та президент Зеленський були в Білому домі наступного понеділка, він [Путін] зробив протилежне тому, що обіцяв. Насправді, він у мерзенний, просто огидний спосіб посилив кампанію бомбардувань. Тож я… Ого! Наконец-то будет нихуя.]]></description>
+      <enclosure url="https://via.placeholder.com/1200x630.png?text=Telegram+Digest" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 Итак, сегодня у нас книга Легенды, человека, не нуждающегося в представлении - А...</title>
+      <link>https://t.me/babchenko77/12810</link>
+      <guid isPermaLink="false">urn:tg:babchenko77:1756814894</guid>
+      <category>babchenko77</category>
+      <pubDate>Tue, 02 Sep 2025 12:08:14 +0000</pubDate>
+      <description><![CDATA[2025-09-02 05:08 — Итак, сегодня у нас книга Легенды, человека, не нуждающегося в представлении - Ады Роговцевой да еще и с автографом! Над книгою «Свідоцтво про життя» Ада Роговцева працювала близько 10 років. В цій книжці, з-поміж інших, Ада Роговцева згадує відомих акторів Віктора Халатова, Михайла Романова, Олега Борисова, Павла Луспєкаєва, Богдана Ступку та інших. Окрім спогадів, до книги ввійшли вірші Ади Роговцевої, роботи театрального художника Тараса Ткаченка та світлини з домашнього архіву родини Роговцевої-Степанкових. В Украине такая книга стоит что-то в районе 700 гривень. У вас же есть уникальный шанс приобрести её с автографом всего за 1000. Да еще и помочь ЗСУ при этом. Для участия в лотерее вам нужно перевести 20 евро - или 1000 гривень - на счет SAB UA. Двадцать евро - один голос. Количество голосов неограниченно. На 100 евро, например, вы получите пять отдельных голосов. Соответственно, ваши шансы увеличатся. Практика показывает, что эта стратегия себя оправдывает. Погнали! Монобанка: https://send.monobank.ua/jar/APjVMiBvBa Номер картки банки 5375 4112 0491 8994 Для удобства копирования. Расшар приветсвуется. Спасибо. 🖼 Итак, сегодня у нас книга Легенды, человека, не нуждающегося в представлении - А...]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/HMrHFdt4PtGw5hKK1ZIRISDL0BkmDAYaFr7y9-BsGw2ELHm9_TX6d_uV_WKL9p0AYqYoIfHCdWrph2UMjFyoSwwy7o5NWcxuEn34qUfW3mfU6WXfjYC70_DFTQ4dNRmT9x9g4QYlDzas-UfuF_sshPFE8R0WYZGCUN5M9W8Dtb3w2tQ3BzDUbblUujKn66pLzSmIdZUpijb2ZRMZESgyks_UZps1DtPhXbVmjcjF3YkL2OuyO283ZDKLP4JuxteA-zqXCA8spcbkPh23T0YZUUWRon4SZbfkP8DvoeLq9UJEu_nEBiIPu0x-TtnChoHkRhwp7T8h-K56Bub1NGRL6g.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 Майдан прощается со своим комендантом (с)…</title>
+      <link>https://t.me/babchenko77/12809</link>
+      <guid isPermaLink="false">urn:tg:babchenko77:1756791459</guid>
+      <category>babchenko77</category>
+      <pubDate>Tue, 02 Sep 2025 05:37:39 +0000</pubDate>
+      <description><![CDATA[2025-09-01 22:37 — Майдан прощается со своим комендантом (с)… 🖼 Майдан прощается со своим комендантом (с)…]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/X4DoJh3VmuQSYMbrG9dkHp5lVd4Lklk46-m-3awsl7tAuHe6Psg-zVmXDCthfYJHGjvYec0QNj0J_pDCIayQpbIpmt-l9_GhrMeKjc2_7l1DzabzzNo9tjr13OinOnxlcwPgA4TMbkRmigYvvfdXqEqTSwFyl7NTBdrOGafIE-SatifuGSGcem-S3AcNfAKYDGY0jympQHxOf5dUFbDKSalcPzZynbQbSyikrqi9QKoYuDbgxnvu5dBfbDJARBD_FYuTyYP287rPc4lDDBPOmA9qdNzI9DJ2kA844MwrQyMDybJpXUEpodG8ASCdKLCBQg0t9KtNMGZIE8nTwK4jKw.jpg" type="image/jpeg" length="0" />
+    </item>
+    <item>
+      <title>🖼 В Каунасе своя атмосфера. Второй любимый город после Таллинна.</title>
+      <link>https://t.me/babchenko77/12802</link>
+      <guid isPermaLink="false">urn:tg:babchenko77:1756759187</guid>
+      <category>babchenko77</category>
+      <pubDate>Mon, 01 Sep 2025 20:39:47 +0000</pubDate>
+      <description><![CDATA[2025-09-01 13:39 — В Каунасе своя атмосфера. Второй любимый город после Таллинна. Спокойной ночи. 🖼 В Каунасе своя атмосфера. Второй любимый город после Таллинна.]]></description>
+      <enclosure url="https://cdn4.telesco.pe/file/dJ4q_Y9gYh1QVZn-DOeXcDkwHby8hKVIpaKhrtQip__5ZRdl3MF5VGUS-5hXbOng_vw41nMdftUy5RCjrvxJN2T0DsfQFBdIsRUE_iTKpLHeWX992nydbTVFeiGpdp7zJZerH0BHZ4NMimuKZsx0-uZu3f9bmSVIjDV6sq0HeXC2qUEUuQDcgNn_hZvgbCwuQp90swiPd5SaZ2Sh8d19rsHtysI6DdQYpJOZivCgDgCu4GhHnzZyxckegLSfprY94WfHm1Znhc3qMgcc1Z0qB3y7j4U6EUB_HGgKkzYM16mIqPYSHNAxvcugf2JfbpoC5ztLS7xZDm9H5ltNTEyHMw.jpg" type="image/jpeg" length="0" />
+    </item>
   </channel>
 </rss>
