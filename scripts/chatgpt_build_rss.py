@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, sys, re, json, requests, feedparser
+import os, sys, re, json, time, random, requests, feedparser
 from datetime import datetime, timedelta, timezone
 from dateutil import parser as dtparser
 import pytz
@@ -35,20 +35,34 @@ def should_publish(now_local_dt, publish_hour):
     return now_local_dt.hour == publish_hour
 
 def fetch_rss(url):
-    """Fetch RSS via requests to get status/logs, then parse with feedparser."""
-    try:
-        resp = requests.get(
-            url,
-            headers={"User-Agent": "magetarro-rss-bot/1.0 (+https://github.com/magetarro/news)"},
-            timeout=25,
-        )
-        resp.raise_for_status()
-        feed = feedparser.parse(resp.content)
-        print(f"[fetch_rss] OK {resp.status_code} {url} entries={len(feed.entries)}")
-        return feed
-    except Exception as e:
-        print(f"[fetch_rss] FAIL {url}: {e}")
-        return feedparser.parse(b"")
+    """Fetch RSS with retries/backoff; handle 429 Retry-After."""
+    tries = 4
+    base = 2.0
+    for i in range(tries):
+        try:
+            resp = requests.get(
+                url,
+                headers={"User-Agent": "magetarro-rss-bot/1.1 (+https://github.com/magetarro/news)"},
+                timeout=(10, 25),  # connect, read
+            )
+            if resp.status_code == 429:
+                ra = resp.headers.get("Retry-After")
+                delay = float(ra) if (ra and ra.isdigit()) else (base * (2 ** i))
+                delay += random.uniform(0, 0.9)  # jitter
+                print(f"[fetch_rss] 429, sleep {delay:.1f}s {url}")
+                time.sleep(delay)
+                continue
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.content)
+            print(f"[fetch_rss] OK {resp.status_code} {url} entries={len(feed.entries)}")
+            return feed
+        except Exception as e:
+            if i == tries - 1:
+                print(f"[fetch_rss] FAIL {url}: {e}")
+                return feedparser.parse(b"")
+            delay = base * (2 ** i) + random.uniform(0, 0.9)
+            print(f"[fetch_rss] error, retry in {delay:.1f}s: {e}")
+            time.sleep(delay)
 
 def parse_time(entry):
     pub = None
@@ -251,29 +265,35 @@ def gather_tg(cfg):
 # --------------------- OpenAI call ---------------------
 
 def openai_chat(messages, model=None):
+    """OpenAI call with retries/backoff; no temperature in payload."""
     model = model or OPENAI_MODEL
-
     url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    # Важно: без temperature (некоторые модели не принимают этот параметр)
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": model, "messages": messages}
 
-    # Опционально: параметры GPT-5 серии (если заданы)
+    # optional GPT-5 family params via ENV
     v = os.getenv("OPENAI_VERBOSITY")
     r = os.getenv("OPENAI_REASONING_EFFORT")
     if v: payload["verbosity"] = v
     if r: payload["reasoning_effort"] = r
 
-    resp = requests.post(url, headers=headers, json=payload, timeout=180)
-    if resp.status_code != 200:
-        print("OpenAI API error", resp.status_code, resp.text[:500], file=sys.stderr)
-        sys.exit(1)
-    data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    tries = int(os.getenv("OPENAI_RETRIES", "3"))
+    base = float(os.getenv("OPENAI_BACKOFF", "2.0"))
+    for i in range(tries):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=(10, 60))  # connect, read
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+            if 500 <= resp.status_code < 600:
+                raise RuntimeError(f"OpenAI {resp.status_code}: {resp.text[:200]}")
+            resp.raise_for_status()
+        except Exception as e:
+            if i == tries - 1:
+                raise
+            delay = base * (2 ** i) + random.uniform(0, 0.9)
+            print(f"[openai_chat] retry in {delay:.1f}s after error: {e}")
+            time.sleep(delay)
 
 
 # --------------------- fallback builder ---------------------
@@ -388,9 +408,11 @@ def main():
     hour = int(cfg["publish_hour_local"])
     nloc = now_local(tz)
 
+    # Minute-window gate (опционально ужесточите по желанию)
     force = os.getenv("FORCE_PUBLISH", "false").lower() in ("1","true","yes","on")
-    if not force and not should_publish(nloc, hour):
-        print(f"Not publish window: {nloc.isoformat()} (local hour={nloc.hour}, expected={hour})")
+    within_window = (nloc.hour == hour)  # можно сузить до минут: and 58 <= nloc.minute <= 3
+    if not (force or within_window):
+        print(f"Skip: local={nloc.strftime('%H:%M')}, want ~{hour:02d}:00")
         sys.exit(0)
 
     tg = gather_tg(cfg)
@@ -404,6 +426,17 @@ def main():
     if total == 0:
         raise RuntimeError("No Telegram posts collected in lookback window. "
                            "Check RSSHub availability, filters, and lookback hours.")
+
+    # ---------- Prepare trimmed data for LLM (speed) ----------
+    MAX_PER_MODE = int(os.getenv("MAX_PER_MODE", "6"))  # LLM limit per mode
+    def trim(items): 
+        return sorted(items, key=lambda x: x["published"], reverse=True)[:MAX_PER_MODE]
+
+    tg_trimmed = {
+        "fact_summary": trim(tg.get("fact_summary", [])),
+        "full_no_opinion": trim(tg.get("full_no_opinion", [])),
+        "raw": trim(tg.get("raw", [])),
+    }
 
     # ---------- Build via LLM ----------
     opinion_markers = [
@@ -435,7 +468,7 @@ def main():
             }
         },
         "timezone": cfg["timezone"],
-        "data": tg
+        "data": tg_trimmed
     }
 
     messages = [
@@ -444,12 +477,17 @@ def main():
         {"role": "user", "content": json.dumps(input_json, ensure_ascii=False)}
     ]
 
-    print("[DEBUG] sending to ChatGPT")
+    print("[DEBUG] sending to ChatGPT (trimmed)")
     print(json.dumps(input_json, ensure_ascii=False)[:2000])
 
-    rss_xml = openai_chat(messages, model=OPENAI_MODEL)
-    items_count = count_items(rss_xml)
-    print(f"[DEBUG] LLM items count: {items_count}")
+    try:
+        rss_xml = openai_chat(messages, model=OPENAI_MODEL)
+        items_count = count_items(rss_xml)
+        print(f"[DEBUG] LLM items count: {items_count}")
+    except Exception as e:
+        print(f"[WARN] OpenAI call failed, using fallback: {e}")
+        rss_xml = build_rss_fallback_from_tg(tg, cfg)
+        items_count = count_items(rss_xml)
 
     # ---------- Fallback если LLM вернул пустое ----------
     if items_count == 0:
@@ -460,7 +498,7 @@ def main():
     try:
         etree.fromstring(rss_xml.encode("utf-8"))
     except Exception as ex:
-        print("[WARN] XML from LLM/fallback failed validation, trying to extract core <rss> block:", ex)
+        print("[WARN] XML validation failed, trying to extract core <rss> block:", ex)
         m = re.search(r"(<\?xml[\s\S]+</rss>)", rss_xml)
         if m:
             rss_xml = m.group(1)
