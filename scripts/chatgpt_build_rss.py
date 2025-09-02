@@ -35,9 +35,10 @@ def should_publish(now_local_dt, publish_hour):
     return now_local_dt.hour == publish_hour
 
 def fetch_rss(url):
-    """Fetch RSS with retries/backoff; handle 429 Retry-After."""
+    """Fetch RSS with retries/backoff; always returns a feed-like object with entries list."""
     tries = 4
     base = 2.0
+    empty_feed = feedparser.parse(b"")  # has .entries == []
     for i in range(tries):
         try:
             resp = requests.get(
@@ -48,21 +49,24 @@ def fetch_rss(url):
             if resp.status_code == 429:
                 ra = resp.headers.get("Retry-After")
                 delay = float(ra) if (ra and ra.isdigit()) else (base * (2 ** i))
-                delay += random.uniform(0, 0.9)  # jitter
+                delay += random.uniform(0, 0.9)
                 print(f"[fetch_rss] 429, sleep {delay:.1f}s {url}")
                 time.sleep(delay)
                 continue
             resp.raise_for_status()
-            feed = feedparser.parse(resp.content)
+            feed = feedparser.parse(resp.content) or empty_feed
             print(f"[fetch_rss] OK {resp.status_code} {url} entries={len(feed.entries)}")
             return feed
         except Exception as e:
-            if i == tries - 1:
+            if i < tries - 1:
+                delay = base * (2 ** i) + random.uniform(0, 0.9)
+                print(f"[fetch_rss] error, retry in {delay:.1f}s: {e}")
+                time.sleep(delay)
+            else:
                 print(f"[fetch_rss] FAIL {url}: {e}")
-                return feedparser.parse(b"")
-            delay = base * (2 ** i) + random.uniform(0, 0.9)
-            print(f"[fetch_rss] error, retry in {delay:.1f}s: {e}")
-            time.sleep(delay)
+                return empty_feed
+    return empty_feed
+
 
 def parse_time(entry):
     pub = None
@@ -186,7 +190,6 @@ def redact_fundraising(text, keywords):
         r'(https?://)?(www\.)?(patreon|boosty|buymeacoffee|paypal\.me)/\S+',
         r'(btc|eth|usdt|xmr):\S+',
         r'(кошел[её]к|wallet)\s*[:：]\s*\S+',
-        r'(qiwi|yoomoney|yandex\.money)\S*',
         r'(card|карт[аы]|картку|карта)\s*[:：]?\s*\d[\d\s\-]{8,}',  # номера карт
         r'\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b',  # btc-like
     ]
@@ -217,8 +220,11 @@ def gather_tg(cfg):
 
     for mode in ("fact_summary", "full_no_opinion", "raw"):
         for url in cfg["telegram"].get(mode, []):
-            feed = fetch_rss(url)
-            for e in feed.entries:
+        feed = fetch_rss(url)
+        entries = getattr(feed, "entries", []) or []
+        for e in entries:
+    # ... same as before
+
                 pub = parse_time(e)
                 if pub < since_utc:
                     continue
