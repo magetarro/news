@@ -17,7 +17,7 @@ if not OPENAI_API_KEY:
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")  # optional
 PEXELS_API_KEY     = os.getenv("PEXELS_API_KEY")        # optional
-OPENAI_MODEL       = os.getenv("OPENAI_MODEL") or "gpt-5"  # можно: gpt-5, gpt-5-mini, gpt-4.1-mini и т.п.
+OPENAI_MODEL       = os.getenv("OPENAI_MODEL") or "pt-5-mini"  # можно: gpt-5, gpt-5-mini, gpt-4.1-mini и т.п.
 
 CONFIG_PATH = "sources.yml"
 
