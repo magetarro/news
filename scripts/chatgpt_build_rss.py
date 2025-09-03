@@ -283,7 +283,7 @@ def openai_chat(messages, model=None):
     base = float(os.getenv("OPENAI_BACKOFF", "2.0"))
     for i in range(tries):
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=(10, 60))  # connect, read
+            resp = requests.post(url, headers=headers, json=payload, timeout=(10, 75))  # connect, read
             if resp.status_code == 200:
                 data = resp.json()
                 return data["choices"][0]["message"]["content"]
