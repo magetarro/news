@@ -16,8 +16,13 @@ if not OPENAI_API_KEY:
     sys.exit(1)
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")  # optional
-PEXELS_API_KEY     = os.getenv("PEXELS_API_KEY")        # optional
-OPENAI_MODEL       = os.getenv("OPENAI_MODEL") or "pt-5-mini"  # можно: gpt-5, gpt-5-mini, gpt-4.1-mini и т.п.
+PEXELS_API_KEY      = os.getenv("PEXELS_API_KEY")       # optional
+OPENAI_MODEL        = os.getenv("OPENAI_MODEL") or "gpt-5"  # gpt-5 / gpt-5-mini / gpt-4.1-mini и т.п.
+
+# Ограничители для LLM-пэйлоада (ускоряют ответ и снижают таймауты)
+MAX_PER_MODE        = int(os.getenv("MAX_PER_MODE", "5"))
+MAX_CHARS_PER_ITEM  = int(os.getenv("MAX_CHARS_PER_ITEM", "900"))
+MAX_TOTAL_CHARS     = int(os.getenv("MAX_TOTAL_CHARS", "9000"))
 
 CONFIG_PATH = "sources.yml"
 
@@ -67,7 +72,6 @@ def fetch_rss(url):
                 return empty_feed
     return empty_feed
 
-
 def parse_time(entry):
     pub = None
     for key in ("published", "updated", "created"):
@@ -91,12 +95,6 @@ def strip_html(text):
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
-
-def contains_keywords(text, keywords):
-    if not text:
-        return False
-    low = text.lower()
-    return any(k in low for k in keywords if k)
 
 def extract_first_image_from_entry(entry, summary_html):
     # Try standard media fields
@@ -190,6 +188,7 @@ def redact_fundraising(text, keywords):
         r'(https?://)?(www\.)?(patreon|boosty|buymeacoffee|paypal\.me)/\S+',
         r'(btc|eth|usdt|xmr):\S+',
         r'(кошел[её]к|wallet)\s*[:：]\s*\S+',
+        r'(qiwi|yoomoney|yandex\.money)\S*',
         r'(card|карт[аы]|картку|карта)\s*[:：]?\s*\d[\d\s\-]{8,}',  # номера карт
         r'\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b',  # btc-like
     ]
@@ -200,6 +199,10 @@ def redact_fundraising(text, keywords):
     redacted = re.sub(r'\s{2,}', ' ', redacted).strip()
     return redacted
 
+def truncate_text(s, n=1200):
+    s = s or ""
+    return s if len(s) <= n else (s[:n] + "…")
+
 
 # --------------------- data gathering ---------------------
 
@@ -207,6 +210,7 @@ def gather_tg(cfg):
     lookback_h = int(cfg["rules"].get("telegram_lookback_hours", 24))
     since_utc = datetime.now(timezone.utc) - timedelta(hours=lookback_h)
 
+    # Ключевые слова используем для РЕДАКТИРОВАНИЯ (вырезать упоминания), а не удаления постов
     redact_kw = [k.lower() for k in (
         cfg["rules"].get("redact_fundraising_keywords") or
         cfg["rules"].get("fundraising_filter_keywords") or []
@@ -218,19 +222,22 @@ def gather_tg(cfg):
     out = {"fact_summary": [], "full_no_opinion": [], "raw": []}
 
     for mode in ("fact_summary", "full_no_opinion", "raw"):
-urls = cfg["telegram"].get(mode, [])
-for url_or_list in urls:
-    candidates = url_or_list if isinstance(url_or_list, list) else [url_or_list]
-    feed = None
-    for u in candidates:
-        f = fetch_rss(u)
-        if getattr(f, "entries", []) or []:
-            feed = f
-            url = u
-            break
-    if feed is None:
-        continue
-    entries = getattr(feed, "entries", []) or []
+        urls = cfg["telegram"].get(mode, [])
+        for url_or_list in urls:
+            candidates = url_or_list if isinstance(url_or_list, list) else [url_or_list]
+            feed = None
+            url = None
+            for u in candidates:
+                f = fetch_rss(u)
+                if getattr(f, "entries", []):
+                    feed = f
+                    url = u
+                    break
+            if feed is None:
+                # ничего не удалось — переходим к следующему каналу
+                continue
+
+            entries = getattr(feed, "entries", []) or []
             for e in entries:
                 pub = parse_time(e)
                 if pub < since_utc:
@@ -241,12 +248,14 @@ for url_or_list in urls:
                 summary_html = getattr(e, "summary", "") or getattr(e, "description", "") or ""
                 txt = strip_html(summary_html + " " + title)
 
-                # Редактируем, убираем донаты
+                # ВАЖНО: НЕ удаляем пост — редактируем его, вырезая донаты/реквизиты
                 txt = redact_fundraising(txt, redact_kw)
 
+                # channel name из URL
                 m = re.search(r"/telegram/channel/([^/?#]+)", url)
                 channel = m.group(1) if m else url
 
+                # image
                 image_url = extract_first_image_from_entry(e, summary_html)
                 if not image_url and enable_external:
                     base_query = title.strip() or "новости пост телеграм"
@@ -263,7 +272,7 @@ for url_or_list in urls:
                     "published": pub.isoformat(),
                     "image": image_url,
                 })
-            # чуть притормозим между каналами, чтобы не ловить 429
+            # Немного паузы между каналами, чтобы снизить риск 429
             time.sleep(0.4 + random.uniform(0, 0.4))
 
     total = sum(len(out[k]) for k in out)
@@ -273,6 +282,7 @@ for url_or_list in urls:
     by_channel = Counter([it["channel"] for mode in out for it in out[mode]])
     print("[gather_tg] by channel:", dict(by_channel))
     return out
+
 
 # --------------------- OpenAI call ---------------------
 
@@ -420,13 +430,14 @@ def main():
     hour = int(cfg["publish_hour_local"])
     nloc = now_local(tz)
 
-    # Minute-window gate (опционально ужесточите по желанию)
+    # Окно публикации / ручной запуск
     force = os.getenv("FORCE_PUBLISH", "false").lower() in ("1","true","yes","on")
-    within_window = (nloc.hour == hour)  # можно сузить до минут: and 58 <= nloc.minute <= 3
+    within_window = (nloc.hour == hour)  # можно сузить до минут, если нужно
     if not (force or within_window):
         print(f"Skip: local={nloc.strftime('%H:%M')}, want ~{hour:02d}:00")
         sys.exit(0)
 
+    # Сбор данных
     tg = gather_tg(cfg)
     total = sum(len(tg[k]) for k in tg)
     print("[DEBUG] collected:", total, "items")
@@ -440,8 +451,7 @@ def main():
                            "Check RSSHub availability, filters, and lookback hours.")
 
     # ---------- Prepare trimmed data for LLM (speed) ----------
-    MAX_PER_MODE = int(os.getenv("MAX_PER_MODE", "6"))  # LLM limit per mode
-    def trim(items): 
+    def trim(items):
         return sorted(items, key=lambda x: x["published"], reverse=True)[:MAX_PER_MODE]
 
     tg_trimmed = {
@@ -449,6 +459,29 @@ def main():
         "full_no_opinion": trim(tg.get("full_no_opinion", [])),
         "raw": trim(tg.get("raw", [])),
     }
+
+    # truncate overly long texts per item
+    for k in tg_trimmed:
+        capped = []
+        for it in tg_trimmed[k]:
+            it2 = dict(it)
+            it2["summary_text"] = truncate_text(it.get("summary_text"), MAX_CHARS_PER_ITEM)
+            capped.append(it2)
+        tg_trimmed[k] = capped
+
+    # cap total chars budget
+    def total_chars(d):
+        return sum(len(it.get("summary_text","")) for m in d for it in d[m])
+
+    while total_chars(tg_trimmed) > MAX_TOTAL_CHARS:
+        # drop from the biggest mode first
+        def mode_len(k):
+            return sum(len(it.get("summary_text","")) for it in tg_trimmed[k])
+        biggest = max(tg_trimmed.keys(), key=mode_len)
+        if tg_trimmed[biggest]:
+            tg_trimmed[biggest].pop()
+        else:
+            break
 
     # ---------- Build via LLM ----------
     opinion_markers = [
@@ -518,6 +551,11 @@ def main():
 
     with open("rss.xml", "w", encoding="utf-8") as f:
         f.write(rss_xml)
+    try:
+        root = etree.fromstring(rss_xml.encode("utf-8"))
+        print("[DONE] items in rss:", len(root.xpath("//channel/item")))
+    except Exception:
+        pass
     print("rss.xml written.")
 
 if __name__ == "__main__":
