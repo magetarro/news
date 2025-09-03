@@ -51,13 +51,25 @@ rules:
   telegram_lookback_hours: 24
 telegram:
   fact_summary:
-  - https://rsshub.app/telegram/channel/ShrikeNews
-  - https://rsshub.app/telegram/channel/Yzheleznyak
-  - https://rsshub.app/telegram/channel/Zvizdecmanhustu
+  - ["https://rsshub.app/telegram/channel/ShrikeNews",
+  "https://hub.slarker.me/telegram/channel/ShrikeNews",
+  "https://rsshub.rssforever.com/telegram/channel/ShrikeNews"]
+  - ["https://rsshub.app/telegram/channel/Yzheleznyak",
+  "https://hub.slarker.me/telegram/channel/Yzheleznyak",
+  "https://rsshub.rssforever.com/telegram/channel/Yzheleznyak"]
+  - ["https://rsshub.app/telegram/channel/Zvizdecmanhustu",
+  "https://hub.slarker.me/telegram/channel/Zvizdecmanhustu",
+  "https://rsshub.rssforever.com/telegram/channel/Zvizdecmanhustu"]
   full_no_opinion:
-  - https://rsshub.app/telegram/channel/Mccartneyser68
+  - ["https://rsshub.app/telegram/channel/Mccartneyser68",
+  "https://hub.slarker.me/telegram/channel/Mccartneyser68",
+  "https://rsshub.rssforever.com/telegram/channel/Mccartneyser68"]
   raw:
-  - https://rsshub.app/telegram/channel/babchenko77
-  - https://rsshub.app/telegram/channel/resurgammmm
+  - ["https://rsshub.app/telegram/channel/babchenko77",
+  "https://hub.slarker.me/telegram/channel/babchenko77",
+  "https://rsshub.rssforever.com/telegram/channel/babchenko77"]
+  - ["https://rsshub.app/telegram/channel/resurgammmm",
+  "https://hub.slarker.me/telegram/channel/resurgammmm",
+  "https://rsshub.rssforever.com/telegram/channel/resurgammmm"]
 timezone: America/Los_Angeles
 topics: {}
