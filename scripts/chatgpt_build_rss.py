@@ -218,9 +218,19 @@ def gather_tg(cfg):
     out = {"fact_summary": [], "full_no_opinion": [], "raw": []}
 
     for mode in ("fact_summary", "full_no_opinion", "raw"):
-        for url in cfg["telegram"].get(mode, []):
-            feed = fetch_rss(url)
-            entries = getattr(feed, "entries", []) or []
+urls = cfg["telegram"].get(mode, [])
+for url_or_list in urls:
+    candidates = url_or_list if isinstance(url_or_list, list) else [url_or_list]
+    feed = None
+    for u in candidates:
+        f = fetch_rss(u)
+        if getattr(f, "entries", []) or []:
+            feed = f
+            url = u
+            break
+    if feed is None:
+        continue
+    entries = getattr(feed, "entries", []) or []
             for e in entries:
                 pub = parse_time(e)
                 if pub < since_utc:
