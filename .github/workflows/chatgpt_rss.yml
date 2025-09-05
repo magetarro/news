@@ -1,43 +1,77 @@
-name: ChatGPT-built RSS
+name: Build & Publish RSS
 
 on:
   schedule:
-    - cron: "0 * * * *"   # hourly; script publishes only at 08:00 America/Los_Angeles
+    - cron: "0 15 * * *"   # 08:00 PDT
+    - cron: "0 16 * * *"   # 08:00 PST
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Force publish now"
+        type: boolean
+        default: false
+
+concurrency:
+  group: rss-build
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install requests feedparser python-dateutil pytz lxml pyyaml
+          pip install -r requirements.txt
 
-      - name: Build RSS with ChatGPT
+      - name: Build rss.xml
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-5-mini
+          FORCE_PUBLISH: ${{ inputs.force || 'false' }}
+          OPENAI_RETRIES: "3"
+          OPENAI_BACKOFF: "2.0"
+          MAX_PER_MODE: "5"
+          MAX_CHARS_PER_ITEM: "900"
+          MAX_TOTAL_CHARS: "9000"
         run: |
           python scripts/chatgpt_build_rss.py
 
-      - name: Commit changes (if any)
+      - name: Commit & push rss.xml (if changed)
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add rss.xml
             git commit -m "Auto-update rss.xml (ChatGPT-built)"
             git push
           else
-            echo "No changes."
+            echo "No changes to commit."
           fi
+
+      - name: Notify WebSub (Feedly) about RSS update
+        run: |
+          RSS_URL="https://magetarro.github.io/news/rss.xml"
+          sleep 5
+          for i in 1 2 3; do
+            echo "WebSub publish attempt $i..."
+            curl -sS -X POST "https://pubsubhubbub.appspot.com/" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "hub.mode=publish" \
+              --data-urlencode "hub.url=${RSS_URL}" && break
+            sleep 5
+          done
+
+      - name: Upload rss.xml artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rss-built
+          path: rss.xml
+          retention-days: 1
