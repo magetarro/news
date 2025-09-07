@@ -10,6 +10,10 @@ on:
         description: "Force publish now"
         type: boolean
         default: false
+        
+permissions:
+  contents: write    # чтобы git push работал
+  pages: write       # (если публикуете на Pages)
 
 concurrency:
   group: rss-build
