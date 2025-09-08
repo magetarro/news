@@ -1,240 +1,315 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, sys, re, json, time, random, requests, feedparser
+import os
+import re
+import sys
+import json
+import time
+import math
+import html
+import hashlib
+import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from dateutil import parser as dtparser
+
+import requests
+import feedparser
 import pytz
+from dateutil import parser as dtparser
 from lxml import etree
 import yaml
-from collections import Counter
 
-# ---- ENV / CONFIG ----
-OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    print("Missing OPENAI_API_KEY secret.", file=sys.stderr)
-    sys.exit(1)
+# -----------------------------
+# Config & Env
+# -----------------------------
 
-UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")  # optional
-PEXELS_API_KEY      = os.getenv("PEXELS_API_KEY")       # optional
-OPENAI_MODEL        = os.getenv("OPENAI_MODEL") or "gpt-5"  # gpt-5 / gpt-5-mini / gpt-4.1-mini и т.п.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini").strip()
+OPENAI_RETRIES = int(os.getenv("OPENAI_RETRIES", "3"))
+OPENAI_BACKOFF = float(os.getenv("OPENAI_BACKOFF", "2.0"))
 
-# Ограничители для LLM-пэйлоада (ускоряют ответ и снижают таймауты)
-MAX_PER_MODE        = int(os.getenv("MAX_PER_MODE", "5"))
-MAX_CHARS_PER_ITEM  = int(os.getenv("MAX_CHARS_PER_ITEM", "900"))
-MAX_TOTAL_CHARS     = int(os.getenv("MAX_TOTAL_CHARS", "9000"))
+USER_AGENT = "news-rss-bot/1.0 (+github-actions)"
 
-CONFIG_PATH = "sources.yml"
+# лимиты для подготовки данных к LLM
+MAX_PER_MODE = int(os.getenv("MAX_PER_MODE", "5"))           # общее ограничение постов на режим
+MAX_PER_CHANNEL = int(os.getenv("MAX_PER_CHANNEL", "4"))     # постов с одного канала
+MAX_CHARS_PER_ITEM = int(os.getenv("MAX_CHARS_PER_ITEM", "700"))
+LLM_PER_CHUNK = int(os.getenv("LLM_PER_CHUNK", "5"))
+
+# временные настройки
+DEFAULT_TZ = "America/Los_Angeles"
+
+# исключение .ru и пр.
+ALLOWED_TLDS_EXCLUDE = (".ru",)
+BLACKLIST_HOSTS = {
+    "ria.ru", "sputniknews.com", "rt.com", "tass.ru"
+}
+
+# ключевые слова для редактирования донатов
+FUNDRAISING_KEYWORDS = [
+    "донат", "донейт", "донатить", "донатів", "пожертв", "сбор средств",
+    "збір коштів", "monobank", "mono банку", "privat24", "приват24",
+    "карта", "реквизит", "реквізит", "qiwi", "patreon", "buymeacoffee",
+    "募金", "donate", "fundraiser", "fundraising"
+]
 
 
-# --------------------- helpers ---------------------
+# -----------------------------
+# Helpers
+# -----------------------------
 
-def load_cfg(path=CONFIG_PATH):
+def http_get(url, timeout=30, headers=None):
+    headers = headers or {}
+    h = {"User-Agent": USER_AGENT}
+    h.update(headers)
+    resp = requests.get(url, timeout=timeout, headers=h)
+    resp.raise_for_status()
+    return resp
+
+
+def fetch_rss(url, max_retries=4):
+    """Загрузка RSS с простыми ретраями (обработка 429 и 5xx)."""
+    backoff = 2.0
+    last_exc = None
+    for i in range(max_retries):
+        try:
+            r = http_get(url, timeout=30)
+            feed = feedparser.parse(r.content)
+            entries_count = len(getattr(feed, "entries", []) or [])
+            print(f"[fetch_rss] OK {r.status_code} {url} entries={entries_count}")
+            return feed
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else 0
+            if status == 429:
+                sleep_s = round(backoff + (i * 0.5), 1)
+                print(f"[fetch_rss] 429, sleep {sleep_s}s {url}")
+                time.sleep(sleep_s)
+                backoff *= 2.0
+                last_exc = e
+                continue
+            elif 500 <= status < 600:
+                sleep_s = round(backoff, 1)
+                print(f"[fetch_rss] {status}, sleep {sleep_s}s {url}")
+                time.sleep(sleep_s)
+                backoff *= 2.0
+                last_exc = e
+                continue
+            else:
+                print(f"[fetch_rss] FAIL {url}: {e}")
+                last_exc = e
+                break
+        except Exception as e:
+            print(f"[fetch_rss] FAIL {url}: {e}")
+            last_exc = e
+            time.sleep(1.0)
+    if last_exc:
+        raise last_exc
+    return None
+
+
+def parse_time(entry):
+    """Определяем pubDate в UTC."""
+    # feedparser уже парсит published_parsed/updated_parsed
+    if hasattr(entry, "published_parsed") and entry.published_parsed:
+        dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+        return dt
+    if hasattr(entry, "updated_parsed") and entry.updated_parsed:
+        dt = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+        return dt
+    # как fallback — пытаемся из полей в виде строки
+    for k in ("published", "updated", "created"):
+        v = getattr(entry, k, None)
+        if v:
+            try:
+                dt = dtparser.parse(v)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            except Exception:
+                pass
+    # если вообще нет — берём сейчас
+    return datetime.now(timezone.utc)
+
+
+def now_local(tzname):
+    tz = pytz.timezone(tzname)
+    return datetime.now(tz)
+
+
+def to_rfc822(dt):
+    if isinstance(dt, str):
+        dt = dtparser.parse(dt)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime('%a, %d %b %Y %H:%M:%S %z')
+
+
+def strip_html(s):
+    if not s:
+        return ""
+    # убираем теги
+    txt = re.sub(r"<[^>]+>", "", s)
+    # unescape
+    return html.unescape(txt).strip()
+
+
+def is_russia_affiliated(link: str) -> bool:
+    if not link:
+        return False
+    try:
+        host = re.sub(r"^https?://", "", link).split("/")[0].lower()
+    except Exception:
+        return False
+    if any(host.endswith(tld) for tld in ALLOWED_TLDS_EXCLUDE):
+        return True
+    for bad in BLACKLIST_HOSTS:
+        if bad in host:
+            return True
+    return False
+
+
+def redact_fundraising_text(txt: str) -> str:
+    """Удаляем фразы/абзацы с упоминаниями донатов, сохраняя остальной текст."""
+    if not txt:
+        return txt
+    # удаляем строки/абзацы с ключевиками
+    lines = re.split(r"(\r?\n)+", txt)
+    out = []
+    for line in lines:
+        low = line.lower()
+        if any(k in low for k in FUNDRAISING_KEYWORDS):
+            continue
+        out.append(line)
+    res = "".join(out)
+    # блюрим явные номера карт и короткие платежные ссылки
+    res = re.sub(r"\b\d{12,19}\b", "[REDACTED]", res)   # номера карт
+    res = re.sub(r"(t\.me\/\+?donate[^\s]*)", "[REDACTED]", res, flags=re.I)
+    return res.strip()
+
+
+# -----------------------------
+# Telegram gather (via RSSHub URLs from config)
+# -----------------------------
+
+def load_config():
+    # пытаемся прочитать sources.yml из корня репо
+    path = os.path.join(os.getcwd(), "sources.yml")
+    if not os.path.exists(path):
+        # дефолтная конфигурация (минимальная)
+        return {
+            "timezone": DEFAULT_TZ,
+            "images": {
+                "placeholder_image": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200"
+            },
+            "rules": {
+                "telegram_lookback_hours": 24,
+                "redact_fundraising_keywords": FUNDRAISING_KEYWORDS,
+            },
+            "telegram": {
+                "fact_summary": [
+                    "https://rsshub.app/telegram/channel/ShrikeNews",
+                    "https://rsshub.app/telegram/channel/Yzheleznyak",
+                    "https://rsshub.app/telegram/channel/Zvizdecmanhustu",
+                ],
+                "full_no_opinion": [
+                    "https://rsshub.app/telegram/channel/Mccartneyser68"
+                ],
+                "raw": [
+                    "https://rsshub.app/telegram/channel/babchenko77",
+                    "https://rsshub.app/telegram/channel/resurgammmm"
+                ]
+            },
+            "weekly_topics": {
+                "enabled": True,
+                "lookback_days": 7,
+                "max_items": 7,
+                "per_source_limit": 3,
+                "schedule": {
+                    "Monday": "archaeology",
+                    "Tuesday": "scientific",
+                    "Wednesday": "ai",
+                    "Thursday": "space",
+                    "Friday": "medicine",
+                    "Saturday": "energy",
+                    "Sunday": "history"
+                },
+                "sources": {
+                    "archaeology": [
+                        "https://www.archaeology.org/rss",
+                        "https://www.sciencedaily.com/rss/most_recent.xml?topic=archaeology",
+                        "https://www.smithsonianmag.com/rss/archaeology/",
+                        "https://www.nature.com/subjects/archaeology.rss",
+                    ],
+                    "scientific": [
+                        "https://www.sciencedaily.com/rss/all.xml",
+                        "https://www.nature.com/nature/articles?type=news-and-views.rss",
+                        "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science",
+                        "https://www.esa.int/rssfeed/Our_Activities/Space_Science",
+                    ],
+                    "ai": [
+                        "https://www.nature.com/subjects/artificial-intelligence.rss",
+                        "https://www.technologyreview.com/feed/ai/",
+                        "https://arxiv.org/rss/cs.AI",
+                        "https://ai.googleblog.com/feeds/posts/default",
+                        "https://openai.com/blog/rss",
+                    ],
+                    "space": [
+                        "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+                        "https://www.esa.int/rssfeed/Our_Activities/Launchers",
+                        "https://www.jpl.nasa.gov/feeds/news",
+                        "https://www.space.com/feeds/all",
+                    ],
+                    "medicine": [
+                        "https://www.nih.gov/news-events/news-releases/feed",
+                        "https://www.cdc.gov/media/rss.htm",
+                        "https://www.sciencedaily.com/rss/health_medicine.xml",
+                    ],
+                    "energy": [
+                        "https://www.iea.org/news.rss",
+                        "https://www.noaa.gov/tags/climate/feed",
+                        "https://www.sciencedaily.com/rss/earth_climate.xml",
+                        "https://www.sciencedaily.com/rss/matter_energy.xml",
+                    ],
+                    "history": [
+                        "https://www.smithsonianmag.com/rss/history/",
+                        "https://www.history.com/.rss/full/",
+                        "https://www.britishmuseum.org/rss.xml",
+                    ],
+                }
+            }
+        }
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-def now_local(tzname):
-    return datetime.now(pytz.timezone(tzname))
-
-def should_publish(now_local_dt, publish_hour):
-    return now_local_dt.hour == publish_hour
-
-def fetch_rss(url):
-    """Fetch RSS with retries/backoff; always returns a feed-like object with entries list."""
-    tries = 4
-    base = 2.0
-    empty_feed = feedparser.parse(b"")  # has .entries == []
-    for i in range(tries):
-        try:
-            resp = requests.get(
-                url,
-                headers={"User-Agent": "magetarro-rss-bot/1.1 (+https://github.com/magetarro/news)"},
-                timeout=(10, 25),  # connect, read
-            )
-            if resp.status_code == 429:
-                ra = resp.headers.get("Retry-After")
-                delay = float(ra) if (ra and ra.isdigit()) else (base * (2 ** i))
-                delay += random.uniform(0, 0.9)
-                print(f"[fetch_rss] 429, sleep {delay:.1f}s {url}")
-                time.sleep(delay)
-                continue
-            resp.raise_for_status()
-            feed = feedparser.parse(resp.content) or empty_feed
-            print(f"[fetch_rss] OK {resp.status_code} {url} entries={len(feed.entries)}")
-            return feed
-        except Exception as e:
-            if i < tries - 1:
-                delay = base * (2 ** i) + random.uniform(0, 0.9)
-                print(f"[fetch_rss] error, retry in {delay:.1f}s: {e}")
-                time.sleep(delay)
-            else:
-                print(f"[fetch_rss] FAIL {url}: {e}")
-                return empty_feed
-    return empty_feed
-
-def parse_time(entry):
-    pub = None
-    for key in ("published", "updated", "created"):
-        val = getattr(entry, key, None)
-        if val:
-            try:
-                pub = dtparser.parse(val)
-                break
-            except Exception:
-                pass
-    if pub is None:
-        pub = datetime.now(timezone.utc)
-    if pub.tzinfo is None:
-        pub = pub.replace(tzinfo=timezone.utc)
-    return pub
-
-def strip_html(text):
-    if not text:
-        return ""
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-def extract_first_image_from_entry(entry, summary_html):
-    # Try standard media fields
-    if getattr(entry, "media_content", None):
-        for m in entry.media_content:
-            url = m.get("url")
-            if url:
-                return url
-    if getattr(entry, "media_thumbnail", None):
-        for m in entry.media_thumbnail:
-            url = m.get("url")
-            if url:
-                return url
-    if getattr(entry, "enclosures", None):
-        for enc in entry.enclosures:
-            if isinstance(enc, dict) and enc.get("href", "").startswith("http"):
-                return enc["href"]
-    # Parse <img> from HTML
-    if summary_html:
-        m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary_html, flags=re.I)
-        if m:
-            return m.group(1)
-    return None
-
-def find_external_image(query):
-    """Optional Unsplash/Pexels lookup. Returns URL or None."""
-    query = (query or "").strip()
-    if not query:
-        return None
-
-    if UNSPLASH_ACCESS_KEY:
-        try:
-            resp = requests.get(
-                "https://api.unsplash.com/search/photos",
-                params={"query": query, "per_page": 1},
-                headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
-                timeout=15,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("results"):
-                    url = data["results"][0]["urls"].get("regular") or data["results"][0]["urls"].get("small")
-                    if url:
-                        return url
-        except Exception:
-            pass
-
-    if PEXELS_API_KEY:
-        try:
-            resp = requests.get(
-                "https://api.pexels.com/v1/search",
-                params={"query": query, "per_page": 1},
-                headers={"Authorization": PEXELS_API_KEY},
-                timeout=15,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                photos = data.get("photos") or []
-                if photos:
-                    src = photos[0].get("src", {})
-                    url = src.get("large") or src.get("medium") or src.get("original")
-                    if url:
-                        return url
-        except Exception:
-            pass
-
-    return None
-
-def redact_fundraising(text, keywords):
-    """
-    Удаляет из текста предложения/строки, где встречаются маркеры донатов/реквизитов.
-    Дополнительно вырезает типовые паттерны ссылок/кошельков/криптокошельков.
-    """
-    if not text:
-        return text
-
-    low_markers = [k.lower() for k in keywords if k]
-    # Разбиваем аккуратно по предложениям/строкам
-    parts = re.split(r'(?<=[.!?…])\s+|\n+', text)
-    keep = []
-    for p in parts:
-        pl = p.lower()
-        if any(k in pl for k in low_markers):
-            continue
-        keep.append(p)
-
-    redacted = " ".join(keep).strip()
-
-    # Жёсткое вычищение явных реквизитов/кошельков/ссылок
-    patterns = [
-        r'(https?://)?(www\.)?(patreon|boosty|buymeacoffee|paypal\.me)/\S+',
-        r'(btc|eth|usdt|xmr):\S+',
-        r'(кошел[её]к|wallet)\s*[:：]\s*\S+',
-        r'(qiwi|yoomoney|yandex\.money)\S*',
-        r'(card|карт[аы]|картку|карта)\s*[:：]?\s*\d[\d\s\-]{8,}',  # номера карт
-        r'\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b',  # btc-like
-    ]
-    for pat in patterns:
-        redacted = re.sub(pat, '〔удалено〕', redacted, flags=re.I)
-
-    # Сжимаем лишние пробелы
-    redacted = re.sub(r'\s{2,}', ' ', redacted).strip()
-    return redacted
-
-def truncate_text(s, n=1200):
-    s = s or ""
-    return s if len(s) <= n else (s[:n] + "…")
-
-
-# --------------------- data gathering ---------------------
 
 def gather_tg(cfg):
-    lookback_h = int(cfg["rules"].get("telegram_lookback_hours", 24))
+    """Сбор постов из Telegram-каналов (через RSSHub) по трём режимам."""
+    tzname = cfg.get("timezone") or DEFAULT_TZ
+    lookback_h = int((cfg.get("rules") or {}).get("telegram_lookback_hours", 24))
     since_utc = datetime.now(timezone.utc) - timedelta(hours=lookback_h)
 
-    # Ключевые слова используем для РЕДАКТИРОВАНИЯ (вырезать упоминания), а не удаления постов
-    redact_kw = [k.lower() for k in (
-        cfg["rules"].get("redact_fundraising_keywords") or
-        cfg["rules"].get("fundraising_filter_keywords") or []
-    )]
-
-    placeholder_image = (cfg.get("images") or {}).get("placeholder_image")
-    enable_external   = (cfg.get("images") or {}).get("enable_external_images", True)
-
     out = {"fact_summary": [], "full_no_opinion": [], "raw": []}
+    by_channel_count = defaultdict(int)
 
     for mode in ("fact_summary", "full_no_opinion", "raw"):
-        urls = cfg["telegram"].get(mode, [])
+        urls = (cfg.get("telegram") or {}).get(mode, [])
         for url_or_list in urls:
             candidates = url_or_list if isinstance(url_or_list, list) else [url_or_list]
             feed = None
             url = None
             for u in candidates:
-                f = fetch_rss(u)
-                if getattr(f, "entries", []):
-                    feed = f
-                    url = u
-                    break
+                try:
+                    f = fetch_rss(u)
+                    entries = getattr(f, "entries", []) or []
+                    if entries:
+                        feed = f
+                        url = u
+                        break
+                except Exception as e:
+                    print(f"[fetch_rss] skip candidate {u}: {e}")
+                    continue
             if feed is None:
-                # ничего не удалось — переходим к следующему каналу
                 continue
 
             entries = getattr(feed, "entries", []) or []
@@ -242,162 +317,334 @@ def gather_tg(cfg):
                 pub = parse_time(e)
                 if pub < since_utc:
                     continue
-
                 title = getattr(e, "title", "") or ""
-                link = getattr(e, "link", url)
+                link = getattr(e, "link", "") or ""
+                if is_russia_affiliated(link):
+                    continue
+
+                # Текст: берём summary/detail и редактируем донаты
                 summary_html = getattr(e, "summary", "") or getattr(e, "description", "") or ""
-                txt = strip_html(summary_html + " " + title)
+                text = strip_html(summary_html)
+                text = redact_fundraising_text(text)
 
-                # ВАЖНО: НЕ удаляем пост — редактируем его, вырезая донаты/реквизиты
-                txt = redact_fundraising(txt, redact_kw)
-
-                # channel name из URL
-                m = re.search(r"/telegram/channel/([^/?#]+)", url)
-                channel = m.group(1) if m else url
-
-                # image
-                image_url = extract_first_image_from_entry(e, summary_html)
-                if not image_url and enable_external:
-                    base_query = title.strip() or "новости пост телеграм"
-                    image_url = find_external_image(f"{channel} {base_query}")
-                if not image_url:
-                    image_url = placeholder_image
+                # Имя канала пытаемся вытащить из URL либо из title
+                ch = ""
+                m = re.search(r"t\.me/([^/\s]+)", link)
+                if m:
+                    ch = m.group(1)
+                if not ch:
+                    # грубый fallback — по домену/заголовку
+                    ch = "channel"
 
                 out[mode].append({
-                    "channel": channel,
-                    "title": title.strip() or f"Пост @{channel}",
-                    "link": link,
-                    "summary_html": summary_html,
-                    "summary_text": txt,
+                    "channel": ch,
+                    "title": title.strip()[:300],
+                    "summary_text": text.strip(),
                     "published": pub.isoformat(),
-                    "image": image_url,
+                    "link": link,
                 })
-            # Немного паузы между каналами, чтобы снизить риск 429
-            time.sleep(0.4 + random.uniform(0, 0.4))
+                by_channel_count[ch] += 1
 
-    total = sum(len(out[k]) for k in out)
-    print("[gather_tg] fact_summary:", len(out["fact_summary"]),
-          "full_no_opinion:", len(out["full_no_opinion"]),
-          "raw:", len(out["raw"]), "TOTAL:", total)
-    by_channel = Counter([it["channel"] for mode in out for it in out[mode]])
-    print("[gather_tg] by channel:", dict(by_channel))
+    total = sum(len(v) for v in out.values())
+    print(f"[gather_tg] fact_summary: {len(out['fact_summary'])} "
+          f"full_no_opinion: {len(out['full_no_opinion'])} raw: {len(out['raw'])} TOTAL: {total}")
+    print(f"[gather_tg] by channel: {dict(by_channel_count)}")
     return out
 
 
-# --------------------- OpenAI call ---------------------
+# -----------------------------
+# Weekly themed digest
+# -----------------------------
+
+def gather_weekly_topic(cfg):
+    wt = (cfg.get("weekly_topics") or {})
+    if not wt.get("enabled"):
+        return None
+
+    tzname = cfg.get("timezone", DEFAULT_TZ)
+    today_local = now_local(tzname)
+    weekday = today_local.strftime("%A")  # Monday..Sunday
+
+    topic_key = (wt.get("schedule") or {}).get(weekday)
+    if not topic_key:
+        return None
+
+    lookback_days = int(wt.get("lookback_days", 7))
+    since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    max_items = int(wt.get("max_items", 7))
+    per_source_limit = int(wt.get("per_source_limit", 3))
+    sources = (wt.get("sources") or {}).get(topic_key, [])
+
+    picked = []
+    seen = set()
+    per_src = defaultdict(int)
+
+    for url in sources:
+        try:
+            feed = fetch_rss(url)
+        except Exception as e:
+            print(f"[weekly] skip source {url}: {e}")
+            continue
+        entries = getattr(feed, "entries", []) or []
+        for e in entries:
+            pub = parse_time(e)
+            if pub < since:
+                continue
+            link = getattr(e, "link", "") or ""
+            if not link or is_russia_affiliated(link):
+                continue
+            title = getattr(e, "title", "") or ""
+            desc_html = getattr(e, "summary", "") or getattr(e, "description", "") or ""
+            desc = strip_html(desc_html)
+
+            key = (link.strip(), title.strip()[:140])
+            if key in seen:
+                continue
+            seen.add(key)
+
+            host = re.sub(r"^https?://", "", link).split("/")[0].lower()
+            per_src[host] += 1
+            if per_src[host] > per_source_limit:
+                continue
+
+            picked.append({
+                "title": title.strip(),
+                "link": link.strip(),
+                "published": pub,
+                "source": host,
+                "summary": desc[:600] + ("…" if len(desc) > 600 else "")
+            })
+
+    if not picked:
+        return None
+
+    picked.sort(key=lambda x: x["published"], reverse=True)
+    picked = picked[:max_items]
+    local_dt = picked[0]["published"].astimezone(pytz.timezone(tzname))
+    local_str = local_dt.strftime("%Y-%m-%d %H:%M")
+    title = f"Weekly Digest • {topic_key.capitalize()} — {local_dt.strftime('%Y-%m-%d')}"
+
+    bullets = []
+    for it in picked:
+        date_str = it["published"].astimezone(pytz.timezone(tzname)).strftime("%Y-%m-%d")
+        bullets.append(
+            f"• <b>{html.escape(it['title'])}</b> (<i>{html.escape(it['source'])}</i>, {date_str}) — "
+            f"{html.escape(it['summary'])} <br/><a href=\"{it['link']}\">{it['link']}</a>"
+        )
+
+    description_html = f"{local_str} — подборка {len(picked)} материалов:<br/><br/>" + "<br/>".join(bullets)
+    placeholder_image = (cfg.get("images") or {}).get("placeholder_image")
+
+    return {
+        "category": f"weekly:{topic_key}",
+        "title": title,
+        "link": "https://magetarro.github.io/news/rss.xml",
+        "published": picked[0]["published"].isoformat(),
+        "description_html": description_html,
+        "image": placeholder_image
+    }
+
+
+def render_weekly_item(item, tzname):
+    if not item:
+        return ""
+    dt = dtparser.parse(item["published"])
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (
+        "    <item>\n"
+        f"      <title>{item['title']}</title>\n"
+        f"      <link>{item['link']}</link>\n"
+        f"      <guid isPermaLink=\"false\">urn:weekly:{int(dt.timestamp())}</guid>\n"
+        f"      <category>{item['category']}</category>\n"
+        f"      <pubDate>{to_rfc822(item['published'])}</pubDate>\n"
+        f"      <description><![CDATA[{item.get('description_html','')}]]></description>\n"
+        f"      <enclosure url=\"{item.get('image','')}\" type=\"image/jpeg\" length=\"0\" />\n"
+        "    </item>\n"
+    )
+
+
+# -----------------------------
+# OpenAI call (small payloads, retries)
+# -----------------------------
 
 def openai_chat(messages, model=None):
-    """OpenAI call with retries/backoff; no temperature in payload."""
+    """Мини-клиент Chat Completions с ретраями и увеличенным timeout."""
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not set")
     model = model or OPENAI_MODEL
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {"model": model, "messages": messages}
 
-    # optional GPT-5 family params via ENV
-    v = os.getenv("OPENAI_VERBOSITY")
-    r = os.getenv("OPENAI_REASONING_EFFORT")
-    if v: payload["verbosity"] = v
-    if r: payload["reasoning_effort"] = r
-
-    tries = int(os.getenv("OPENAI_RETRIES", "3"))
-    base = float(os.getenv("OPENAI_BACKOFF", "2.0"))
-    for i in range(tries):
+    delay = 1.2
+    for attempt in range(1, OPENAI_RETRIES + 1):
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=(10, 75))  # connect, read
-            if resp.status_code == 200:
-                data = resp.json()
-                return data["choices"][0]["message"]["content"]
-            if 500 <= resp.status_code < 600:
-                raise RuntimeError(f"OpenAI {resp.status_code}: {resp.text[:200]}")
-            resp.raise_for_status()
+            # (connect, read) timeouts
+            resp = requests.post(url, headers=headers, json=payload, timeout=(10, 120))
+            if resp.status_code != 200:
+                print("OpenAI API error", resp.status_code, resp.text[:500], file=sys.stderr)
+                # 429/5xx — попробуем ещё раз
+                if resp.status_code in (429, 500, 502, 503, 504) and attempt < OPENAI_RETRIES:
+                    print(f"[openai_chat] retry in {round(delay,1)}s after HTTP {resp.status_code}")
+                    time.sleep(delay)
+                    delay *= OPENAI_BACKOFF
+                    continue
+                raise RuntimeError(f"OpenAI HTTP {resp.status_code}")
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
         except Exception as e:
-            if i == tries - 1:
-                raise
-            delay = base * (2 ** i) + random.uniform(0, 0.9)
-            print(f"[openai_chat] retry in {delay:.1f}s after error: {e}")
-            time.sleep(delay)
+            if attempt < OPENAI_RETRIES:
+                print(f"[openai_chat] retry in {round(delay,1)}s after error: {e}")
+                time.sleep(delay)
+                delay *= OPENAI_BACKOFF
+                continue
+            print(f"[WARN] OpenAI call failed, using fallback: {e}")
+            raise
 
 
-# --------------------- fallback builder ---------------------
+# -----------------------------
+# Channel-wise building (small chunks)
+# -----------------------------
 
-def count_items(xml_text: str) -> int:
-    try:
-        root = etree.fromstring(xml_text.encode("utf-8"))
-        return len(root.xpath("//channel/item"))
-    except Exception:
-        return 0
+def compact_items(items, max_chars=800):
+    seen = set()
+    out = []
+    for it in items:
+        key = (it.get("link","").strip(), (it.get("title") or "")[:120], it.get("channel"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "channel": it.get("channel"),
+            "title": (it.get("title") or "")[:200],
+            "text": (it.get("summary_text") or "")[:max_chars],
+            "published": it.get("published"),
+            "link": it.get("link"),
+        })
+    return out
 
-def split_sentences(text, max_sentences=5):
-    parts = re.split(r'(?<=[.!?…])\s+', (text or "").strip())
-    parts = [p for p in parts if p]
-    return " ".join(parts[:max_sentences]) if parts else text
 
-def remove_opinion_sentences(text):
-    markers = [
-        # RU
-        "я думаю","по моему мнению","мне кажется","я считаю","как по мне",
-        "на мой взгляд","по-моему","лично я","думаю","я уверен","убеждён",
-        # UK
-        "на мою думку","мені здається","я вважаю","як на мене","на мій погляд","особисто я",
-        # EN
-        "i think","in my opinion","i believe","personally","seems to me",
+def group_by_channel(items):
+    g = defaultdict(list)
+    for it in items:
+        g[it["channel"]].append(it)
+    return g
+
+
+def chunk(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i+size]
+
+
+PROMPT_RSS_ITEMS = (
+    "Собери RSS <item> элементы из входных данных. Для КАЖДОГО объекта верни ОДИН <item>:\n"
+    "- <title>: краткий факт-заголовок (если пусто — сгенерируй по содержанию, без мнений)\n"
+    "- <link>: исходная ссылка\n"
+    "- <category>: имя канала (поле 'channel')\n"
+    "- <pubDate>: RFC822 из поля 'published'\n"
+    "- <description>: 3–5 предложений фактов (RU/UK), без мнений/оценок.\n"
+    "Верни ТОЛЬКО последовательность <item>...</item>, без <rss> и <channel>."
+)
+
+
+def llm_items_for_chunk(channel, items, model):
+    data = {"channel": channel, "items": items}
+    messages = [
+        {"role": "system", "content": "Ты формируешь компактные RSS <item> элементы для дайджеста."},
+        {"role": "user", "content": PROMPT_RSS_ITEMS},
+        {"role": "user", "content": json.dumps(data, ensure_ascii=False)}
     ]
-    sents = re.split(r'(?<=[.!?…])\s+', (text or "").strip())
-    keep = []
-    low_markers = [m.lower() for m in markers]
-    for s in sents:
-        if not s.strip():
-            continue
-        if any(m in s.lower() for m in low_markers):
-            continue
-        keep.append(s)
-    return " ".join(keep).strip() or (text or "")
+    return openai_chat(messages, model=model)
 
-def to_rfc822(dt_iso):
-    dt = dtparser.parse(dt_iso)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
 
-def render_items_from_mode(items, mode, tzname, placeholder_image):
+def render_minimal_items(items, tzname):
     res = []
     tz = pytz.timezone(tzname)
     for it in items:
         dt = dtparser.parse(it["published"])
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        local_dt = dt.astimezone(tz)
-        local_str = local_dt.strftime("%Y-%m-%d %H:%M")
-
-        title = it["title"] or f"Пост @{it['channel']}"
-        link = it["link"]
-        body = it.get("summary_text") or ""
-        image = it.get("image") or placeholder_image
-
-        if mode == "fact_summary":
-            desc = split_sentences(body, max_sentences=5)
-        elif mode == "full_no_opinion":
-            desc = remove_opinion_sentences(body)
-        else:
-            desc = body
-
-        description = f"{local_str} — {desc}"
-        item_xml = (
+        local_str = dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+        title = it.get("title") or f"Пост @{it.get('channel')}"
+        link = it.get("link") or ""
+        desc = it.get("text") or ""
+        xml = (
             "    <item>\n"
-            f"      <title>{title}</title>\n"
+            f"      <title>{html.escape(title)}</title>\n"
             f"      <link>{link}</link>\n"
-            f"      <guid isPermaLink=\"false\">urn:tg:{it['channel']}:{int(dt.timestamp())}</guid>\n"
-            f"      <category>{it['channel']}</category>\n"
+            f"      <guid isPermaLink=\"false\">urn:fallback:{it.get('channel')}:{int(dt.timestamp())}</guid>\n"
+            f"      <category>{html.escape(it.get('channel') or '')}</category>\n"
             f"      <pubDate>{to_rfc822(it['published'])}</pubDate>\n"
-            f"      <description><![CDATA[{description}]]></description>\n"
-            f"      <enclosure url=\"{image}\" type=\"image/jpeg\" length=\"0\" />\n"
+            f"      <description><![CDATA[{local_str} — {html.escape(desc)}]]></description>\n"
             "    </item>\n"
         )
-        res.append(item_xml)
-    return res
+        res.append(xml)
+    return "\n".join(res)
 
-def build_rss_fallback_from_tg(tg, cfg):
-    tzname = cfg["timezone"]
+
+def build_items_channelwise(tg_trimmed, model, tzname, per_chunk=6):
+    all_items_xml = []
+    for mode in ("fact_summary", "full_no_opinion", "raw"):
+        by_ch = group_by_channel(tg_trimmed.get(mode, []))
+        for ch, posts in by_ch.items():
+            posts_sorted = sorted(posts, key=lambda x: x["published"], reverse=True)
+            for part in chunk(posts_sorted, per_chunk):
+                try:
+                    xml_part = llm_items_for_chunk(ch, part, model)
+                    all_items_xml.append(xml_part.strip())
+                except Exception as e:
+                    print(f"[llm] chunk failed for channel {ch}: {e}")
+                    all_items_xml.append(render_minimal_items(part, tzname))
+                time.sleep(0.4)
+    return "\n".join(all_items_xml)
+
+
+def wrap_items_into_rss(channel_title, items_xml, tzname):
+    now = datetime.now(pytz.timezone(tzname))
+    head = (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<rss version=\"2.0\">\n"
+        "  <channel>\n"
+        f"    <title>{channel_title}</title>\n"
+        "    <link>https://magetarro.github.io/news/rss.xml</link>\n"
+        "    <description>Сводный Telegram-дайджест с тематическими материалами.</description>\n"
+        "    <language>ru</language>\n"
+        f"    <lastBuildDate>{now.strftime('%a, %d %b %Y %H:%M:%S %z')}</lastBuildDate>\n"
+    )
+    tail = "  </channel>\n</rss>\n"
+    return head + (items_xml or "") + "\n" + tail
+
+
+# -----------------------------
+# Fallback deterministic builder (no LLM)
+# -----------------------------
+
+def render_items_from_mode(items, category, tzname, placeholder_image=None):
+    out = []
+    for it in items:
+        title = it.get("title") or f"Пост @{it.get('channel')}"
+        link = it.get("link") or ""
+        pub = it.get("published") or datetime.now(timezone.utc).isoformat()
+        desc = it.get("summary_text") or ""
+        xml = (
+            "    <item>\n"
+            f"      <title>{html.escape(title)}</title>\n"
+            f"      <link>{link}</link>\n"
+            f"      <guid isPermaLink=\"false\">urn:{category}:{hashlib.md5((link+pub).encode()).hexdigest()}</guid>\n"
+            f"      <category>{category}</category>\n"
+            f"      <pubDate>{to_rfc822(pub)}</pubDate>\n"
+            f"      <description><![CDATA[{html.escape(desc)}]]></description>\n"
+        )
+        if placeholder_image:
+            xml += f"      <enclosure url=\"{placeholder_image}\" type=\"image/jpeg\" length=\"0\" />\n"
+        xml += "    </item>\n"
+        out.append(xml)
+    return out
+
+
+def build_rss_fallback_from_tg(tg, cfg, weekly_item=None):
+    tzname = cfg.get("timezone") or DEFAULT_TZ
     now = datetime.now(pytz.timezone(tzname))
     placeholder = (cfg.get("images") or {}).get("placeholder_image")
 
@@ -413,150 +660,74 @@ def build_rss_fallback_from_tg(tg, cfg):
     )
 
     items_xml = []
+    if weekly_item:
+        items_xml.append(render_weekly_item(weekly_item, tzname))
     items_xml += render_items_from_mode(tg.get("fact_summary", []), "fact_summary", tzname, placeholder)
     items_xml += render_items_from_mode(tg.get("full_no_opinion", []), "full_no_opinion", tzname, placeholder)
     items_xml += render_items_from_mode(tg.get("raw", []), "raw", tzname, placeholder)
-
     tail = "  </channel>\n</rss>\n"
     return head + "".join(items_xml) + tail
 
 
-# --------------------- main ---------------------
+# -----------------------------
+# Main
+# -----------------------------
 
 def main():
     print(f"[env] model={OPENAI_MODEL} ref={os.getenv('GITHUB_REF','(local)')}")
-    cfg = load_cfg()
-    tz = cfg["timezone"]
-    hour = int(cfg["publish_hour_local"])
-    nloc = now_local(tz)
 
-    # Окно публикации / ручной запуск
-    force = os.getenv("FORCE_PUBLISH", "false").lower() in ("1","true","yes","on")
-    within_window = (nloc.hour == hour)  # можно сузить до минут, если нужно
-    if not (force or within_window):
-        print(f"Skip: local={nloc.strftime('%H:%M')}, want ~{hour:02d}:00")
-        sys.exit(0)
-
-    # Сбор данных
+    cfg = load_config()
     tg = gather_tg(cfg)
-    total = sum(len(tg[k]) for k in tg)
-    print("[DEBUG] collected:", total, "items")
-    for mode, items in tg.items():
-        print("  ", mode, "->", len(items))
-        for it in items[:3]:
-            print("    ", it["channel"], "|", it["title"][:80])
 
-    if total == 0:
-        raise RuntimeError("No Telegram posts collected in lookback window. "
-                           "Check RSSHub availability, filters, and lookback hours.")
+    # Отсечём потолки, чтобы не раздувать payload
+    def cap_per_channel(items, n=MAX_PER_CHANNEL):
+        by = group_by_channel(items)
+        out = []
+        for ch, posts in by.items():
+            posts = sorted(posts, key=lambda x: x["published"], reverse=True)[:n]
+            out += posts
+        return out
 
-    # ---------- Prepare trimmed data for LLM (speed) ----------
-    def trim(items):
-        return sorted(items, key=lambda x: x["published"], reverse=True)[:MAX_PER_MODE]
+    tg = {
+        "fact_summary": sorted(tg.get("fact_summary", []), key=lambda x: x["published"], reverse=True)[:MAX_PER_MODE],
+        "full_no_opinion": sorted(tg.get("full_no_opinion", []), key=lambda x: x["published"], reverse=True)[:MAX_PER_MODE],
+        "raw": sorted(tg.get("raw", []), key=lambda x: x["published"], reverse=True)[:MAX_PER_MODE],
+    }
+    tg = {k: cap_per_channel(v, MAX_PER_CHANNEL) for k, v in tg.items()}
 
+    # компакт для LLM
     tg_trimmed = {
-        "fact_summary": trim(tg.get("fact_summary", [])),
-        "full_no_opinion": trim(tg.get("full_no_opinion", [])),
-        "raw": trim(tg.get("raw", [])),
+        "fact_summary": compact_items(tg.get("fact_summary", []), max_chars=MAX_CHARS_PER_ITEM),
+        "full_no_opinion": compact_items(tg.get("full_no_opinion", []), max_chars=MAX_CHARS_PER_ITEM),
+        "raw": compact_items(tg.get("raw", []), max_chars=MAX_CHARS_PER_ITEM),
     }
+    items_total = sum(len(v) for v in tg_trimmed.values())
+    print(f"[DEBUG] prepared for LLM: {items_total} items "
+          f"(chars/item≤{MAX_CHARS_PER_ITEM}, per_channel≤{MAX_PER_CHANNEL}, per_chunk={LLM_PER_CHUNK})")
 
-    # truncate overly long texts per item
-    for k in tg_trimmed:
-        capped = []
-        for it in tg_trimmed[k]:
-            it2 = dict(it)
-            it2["summary_text"] = truncate_text(it.get("summary_text"), MAX_CHARS_PER_ITEM)
-            capped.append(it2)
-        tg_trimmed[k] = capped
+    # weekly-item
+    weekly = gather_weekly_topic(cfg)
+    if weekly:
+        print(f"[weekly] added topic item: {weekly['category']} — {weekly['title']}")
+    else:
+        print("[weekly] no topic item today or nothing picked.")
 
-    # cap total chars budget
-    def total_chars(d):
-        return sum(len(it.get("summary_text","")) for m in d for it in d[m])
-
-    while total_chars(tg_trimmed) > MAX_TOTAL_CHARS:
-        # drop from the biggest mode first
-        def mode_len(k):
-            return sum(len(it.get("summary_text","")) for it in tg_trimmed[k])
-        biggest = max(tg_trimmed.keys(), key=mode_len)
-        if tg_trimmed[biggest]:
-            tg_trimmed[biggest].pop()
-        else:
-            break
-
-    # ---------- Build via LLM ----------
-    opinion_markers = [
-        "я думаю","по моему мнению","мне кажется","я считаю","как по мне",
-        "на мой взгляд","по-моему","лично я","думаю","я уверен","убеждён",
-        "на мою думку","мені здається","я вважаю","як на мене","на мій погляд","особисто я",
-        "i think","in my opinion","i believe","personally","seems to me"
-    ]
-
-    rules_text = (
-        "Сформируй один RSS 2.0 (один канал). Режимы:\n"
-        "- fact_summary: резюме 3–5 фактических предложений (RU/UK). Без оценок.\n"
-        "- full_no_opinion: полный текст (RU/UK), но удали субъективные предложения с маркерами: "
-        + "; ".join(opinion_markers) + ".\n"
-        "- raw: без изменений. Если есть image — добавь <enclosure>.\n"
-        "Важно: тексты уже очищены от упоминаний донатов/реквизитов; не возвращай просьбы о пожертвованиях.\n"
-        "Для каждого item добавляй: <title>, <category> (имя канала), локальное время America/Los_Angeles (YYYY-MM-DD HH:MM) в начале description, <link>, содержимое по режиму, и <enclosure>.\n"
-        "Верни только валидный XML, начиная с <?xml ...>. Если data содержит элементы, ОБЯЗАТЕЛЬНО создай <item> для каждого. Не выпускать пустой канал."
-    )
-
-    input_json = {
-        "output": {
-            "type": "rss2.0",
-            "channel": {
-                "title": "Telegram дайджест (с изображениями)",
-                "link": "https://magetarro.github.io/news/rss.xml",
-                "description": "Сводный Telegram-дайджест: fact summary, full без мнений, raw; с картинками.",
-                "language": "ru"
-            }
-        },
-        "timezone": cfg["timezone"],
-        "data": tg_trimmed
-    }
-
-    messages = [
-        {"role": "system", "content": "Ты помощник, который строит RSS 2.0 из входных данных по чётким правилам."},
-        {"role": "user", "content": rules_text},
-        {"role": "user", "content": json.dumps(input_json, ensure_ascii=False)}
-    ]
-
-    print("[DEBUG] sending to ChatGPT (trimmed)")
-    print(json.dumps(input_json, ensure_ascii=False)[:2000])
-
+    # Пытаемся собрать каналами (если OpenAI откажет — fallback ниже)
     try:
-        rss_xml = openai_chat(messages, model=OPENAI_MODEL)
-        items_count = count_items(rss_xml)
-        print(f"[DEBUG] LLM items count: {items_count}")
+        items_xml = build_items_channelwise(tg_trimmed, OPENAI_MODEL, cfg.get("timezone", DEFAULT_TZ), per_chunk=LLM_PER_CHUNK)
+        weekly_xml = render_weekly_item(weekly, cfg.get("timezone", DEFAULT_TZ)) if weekly else ""
+        final_xml = wrap_items_into_rss("Telegram дайджест (канально)", weekly_xml + "\n" + items_xml, cfg.get("timezone", DEFAULT_TZ))
+        # валидация
+        etree.fromstring(final_xml.encode("utf-8"))
+        rss_xml = final_xml
     except Exception as e:
-        print(f"[WARN] OpenAI call failed, using fallback: {e}")
-        rss_xml = build_rss_fallback_from_tg(tg, cfg)
-        items_count = count_items(rss_xml)
-
-    # ---------- Fallback если LLM вернул пустое ----------
-    if items_count == 0:
-        print("[WARN] LLM produced empty RSS. Falling back to deterministic builder.")
-        rss_xml = build_rss_fallback_from_tg(tg, cfg)
-
-    # Простая XML-валидация
-    try:
-        etree.fromstring(rss_xml.encode("utf-8"))
-    except Exception as ex:
-        print("[WARN] XML validation failed, trying to extract core <rss> block:", ex)
-        m = re.search(r"(<\?xml[\s\S]+</rss>)", rss_xml)
-        if m:
-            rss_xml = m.group(1)
-            etree.fromstring(rss_xml.encode("utf-8"))  # если снова упадёт — исключение
+        print(f"[WARN] channelwise path failed, fallback to deterministic builder: {e}")
+        rss_xml = build_rss_fallback_from_tg(tg, cfg, weekly_item=weekly)
 
     with open("rss.xml", "w", encoding="utf-8") as f:
         f.write(rss_xml)
-    try:
-        root = etree.fromstring(rss_xml.encode("utf-8"))
-        print("[DONE] items in rss:", len(root.xpath("//channel/item")))
-    except Exception:
-        pass
     print("rss.xml written.")
+
 
 if __name__ == "__main__":
     main()
