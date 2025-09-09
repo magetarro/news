@@ -1,0 +1,202 @@
+*** a/scripts/chatgpt_build_rss.py
+--- b/scripts/chatgpt_build_rss.py
+@@
+ from lxml import etree
+ import yaml
+ 
+ # -----------------------------
+ # Config & Env
+ # -----------------------------
+@@
+ FUNDRAISING_KEYWORDS = [
+     "донат", "донейт", "донатить", "донатів", "пожертв", "сбор средств",
+     "збір коштів", "monobank", "mono банку", "privat24", "приват24",
+     "карта", "реквизит", "реквізит", "qiwi", "patreon", "buymeacoffee",
+     "募金", "donate", "fundraiser", "fundraising"
+ ]
+ 
+@@
+ def redact_fundraising_text(txt: str) -> str:
+     """Удаляем фразы/абзацы с упоминаниями донатов, сохраняя остальной текст."""
+     if not txt:
+         return txt
+     # удаляем строки/абзацы с ключевиками
+     lines = re.split(r"(\r?\n)+", txt)
+     out = []
+     for line in lines:
+         low = line.lower()
+         if any(k in low for k in FUNDRAISING_KEYWORDS):
+             continue
+         out.append(line)
+     res = "".join(out)
+     # блюрим явные номера карт и короткие платежные ссылки
+     res = re.sub(r"\b\d{12,19}\b", "[REDACTED]", res)   # номера карт
+     res = re.sub(r"(t\.me\/\+?donate[^\s]*)", "[REDACTED]", res, flags=re.I)
+     return res.strip()
+ 
++# -----------------------------
++# Stock images (Pexels)
++# -----------------------------
++
++PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
++PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
++
++STOPWORDS = set("""
++и в во на у о от для про при из за по над под через між міжи та але або чи як же що щоб щоби щобь или либо однако однакож алеж уже вжеж это ця цей це такі таких такой така такі ті тієї цей-це такий такає такой-то то-то там тут тут-то цей-це про це це-ж це-от але-ж але-от но не нет без міждо внутри вне изнутри
++a an the of for with on in to from by as at about into over under between without within through around across per via que de la le les des une un et du au aux ou sur sous dans par pour selon plus moins
++""".split())
++
++def _keywords_from_title_text(title: str, text: str, max_len=5):
++    src = f"{title or ''} {text or ''}".lower()
++    words = re.findall(r"[a-zA-Zа-яА-ЯіїєґІЇЄҐ0-9\-]{3,}", src)
++    clean = [w.strip("-") for w in words if len(w.strip("-")) >= 4 and w not in STOPWORDS]
++    bad = {"сегодня","вчера","новости","пост","канал","видео","фото","update","news","breaking","official"}
++    clean = [w for w in clean if w not in bad]
++    return " ".join(clean[:max_len]) or (title or "").strip()[:60]
++
++def fetch_pexels_image(query: str, min_width=1200, orientation="landscape", locale="ru-RU"):
++    """Ищем релевантную картинку на Pexels. Возвращает URL крупного варианта или None."""
++    if not PEXELS_API_KEY:
++        return None
++    headers = {"Authorization": PEXELS_API_KEY}
++    params = {
++        "query": query,
++        "per_page": 1,
++        "orientation": orientation,
++        "size": "large",
++        "locale": locale,
++    }
++    backoff = 1.0
++    for _ in range(3):
++        try:
++            r = requests.get(PEXELS_SEARCH_URL, headers=headers, params=params, timeout=15)
++            if r.status_code == 429:
++                time.sleep(backoff); backoff *= 2; continue
++            r.raise_for_status()
++            data = r.json()
++            photos = data.get("photos") or []
++            if not photos:
++                if locale == "ru-RU":
++                    locale = "en-US"
++                    continue
++                return None
++            src = (photos[0] or {}).get("src") or {}
++            for key in ("large2x","original","large","landscape"):
++                url = src.get(key)
++                if url:
++                    return url
++            return src.get("medium") or src.get("small") or None
++        except Exception:
++            time.sleep(backoff); backoff *= 2
++    return None
++
++def choose_image_for_item(title: str, text: str):
++    q = _keywords_from_title_text(title, text, max_len=5)
++    return fetch_pexels_image(q) or fetch_pexels_image(q, locale="en-US")
++
+@@
+-def render_items_from_mode(items, category, tzname, placeholder_image=None):
+-    out = []
+-    for it in items:
+-        title = it.get("title") or f"Пост @{it.get('channel')}"
+-        link = it.get("link") or ""
+-        pub = it.get("published") or datetime.now(timezone.utc).isoformat()
+-        desc = it.get("summary_text") or ""
+-        xml = (
+-            "    <item>\n"
+-            f"      <title>{html.escape(title)}</title>\n"
+-            f"      <link>{link}</link>\n"
+-            f"      <guid isPermaLink=\"false\">urn:{category}:{hashlib.md5((link+pub).encode()).hexdigest()}</guid>\n"
+-            f"      <category>{category}</category>\n"
+-            f"      <pubDate>{to_rfc822(pub)}</pubDate>\n"
+-            f"      <description><![CDATA[{html.escape(desc)}]]></description>\n"
+-        )
+-        if placeholder_image:
+-            xml += f"      <enclosure url=\"{placeholder_image}\" type=\"image/jpeg\" length=\"0\" />\n"
+-        xml += "    </item>\n"
+-        out.append(xml)
+-    return out
++def render_items_from_mode(items, category, tzname, placeholder_image=None):
++    """Fallback-рендер: если в посте нет картинки — подбираем стоковую (Pexels) или ставим placeholder."""
++    out = []
++    for it in items:
++        title = it.get("title") or f"Пост @{it.get('channel')}"
++        link = it.get("link") or ""
++        pub = it.get("published") or datetime.now(timezone.utc).isoformat()
++        desc = it.get("summary_text") or ""
++
++        image_url = None
++        if placeholder_image:
++            image_url = choose_image_for_item(title, desc) or placeholder_image
++
++        xml = (
++            "    <item>\n"
++            f"      <title>{html.escape(title)}</title>\n"
++            f"      <link>{link}</link>\n"
++            f"      <guid isPermaLink=\"false\">urn:{category}:{hashlib.md5((link+pub).encode()).hexdigest()}</guid>\n"
++            f"      <category>{category}</category>\n"
++            f"      <pubDate>{to_rfc822(pub)}</pubDate>\n"
++            f"      <description><![CDATA[{html.escape(desc)}]]></description>\n"
++        )
++        if image_url:
++            xml += f"      <enclosure url=\"{image_url}\" type=\"image/jpeg\" length=\"0\" />\n"
++        xml += "    </item>\n"
++        out.append(xml)
++    return out
+@@
+ def build_rss_fallback_from_tg(tg, cfg, weekly_item=None):
+     tzname = cfg.get("timezone") or DEFAULT_TZ
+     now = datetime.now(pytz.timezone(tzname))
+     placeholder = (cfg.get("images") or {}).get("placeholder_image")
+@@
+     items_xml += render_items_from_mode(tg.get("raw", []), "raw", tzname, placeholder)
+     tail = "  </channel>\n</rss>\n"
+     return head + "".join(items_xml) + tail
++
++def postprocess_items_add_images(items_xml: str, tzname: str, placeholder_image: str = None):
++    """
++    Пост-обработка LLM-ветки: добавляем <enclosure>, если его нет.
++    Сначала пробуем Pexels, иначе — placeholder.
++    """
++    if not items_xml:
++        return items_xml
++    try:
++        wrapper = f"<rss><channel>{items_xml}</channel></rss>"
++        root = etree.fromstring(wrapper.encode("utf-8"))
++        items = root.findall(".//item")
++        for it in items:
++            if it.find("enclosure") is not None:
++                continue
++            title = (it.findtext("title") or "").strip()
++            desc_html = it.findtext("description") or ""
++            desc_txt = strip_html(desc_html)
++            img_url = choose_image_for_item(title, desc_txt) or placeholder_image
++            if img_url:
++                enc = etree.SubElement(it, "enclosure")
++                enc.set("url", img_url)
++                enc.set("type", "image/jpeg")
++                enc.set("length", "0")
++        channel = root.find(".//channel")
++        out = []
++        for child in channel:
++            if child.tag.lower() == "item":
++                out.append(etree.tostring(child, encoding="unicode"))
++        return "\n".join(out)
++    except Exception as e:
++        print(f"[images] postprocess failed: {e}")
++        return items_xml
+@@
+     try:
+-        items_xml = build_items_channelwise(tg_trimmed, OPENAI_MODEL, cfg.get("timezone", DEFAULT_TZ), per_chunk=LLM_PER_CHUNK)
++        items_xml = build_items_channelwise(tg_trimmed, OPENAI_MODEL, cfg.get("timezone", DEFAULT_TZ), per_chunk=LLM_PER_CHUNK)
++        # добавим изображения, если их ещё нет
++        items_xml = postprocess_items_add_images(
++            items_xml,
++            cfg.get("timezone", DEFAULT_TZ),
++            (cfg.get("images") or {}).get("placeholder_image")
++        )
+         weekly_xml = render_weekly_item(weekly, cfg.get("timezone", DEFAULT_TZ)) if weekly else ""
+         final_xml = wrap_items_into_rss("Telegram дайджест (канально)", weekly_xml + "\n" + items_xml, cfg.get("timezone", DEFAULT_TZ))
+         # валидация
+         etree.fromstring(final_xml.encode("utf-8"))
+         rss_xml = final_xml
