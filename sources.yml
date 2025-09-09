@@ -1,6 +1,6 @@
 images:
   enable_external_images: true
-  placeholder_image: https://via.placeholder.com/1200x630.png?text=Telegram+Digest
+  placeholder_image: https://github.com/magetarro/news/blob/main/pexels-jeffrey-czum-254391-3750893.jpg?text=Telegram+Digest
 publish_hour_local: 9
 rules:
   exclude_domains_ru_affiliated: true
