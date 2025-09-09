@@ -187,6 +187,64 @@ def redact_fundraising_text(txt: str) -> str:
     res = re.sub(r"(t\.me\/\+?donate[^\s]*)", "[REDACTED]", res, flags=re.I)
     return res.strip()
 
+# -----------------------------
+# Stock images (Pexels)
+# -----------------------------
+
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
+PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
+
+STOPWORDS = set("""
+и в во на у о от для про при из за по над под через між міжи та але або чи як же що щоб щоби чтобы или либо однако однакож алеж уже ужеж это ця цей це такі таких такой така такі ті тієї цей-це такий такає такой-то то-то там тут тут-то цей-це про це це-ж це-от але-ж але-от но не нет без міждо внутри вне изнутри
+a an the of for with on in to from by as at about into over under between without within through around across per via que de la le les des une un et du au aux ou sur sous dans par pour selon plus moins
+""".split())
+
+def _keywords_from_title_text(title: str, text: str, max_len=5):
+    src = f"{title or ''} {text or ''}".lower()
+    words = re.findall(r"[a-zA-Zа-яА-ЯіїєґІЇЄҐ0-9\-]{3,}", src)
+    clean = [w.strip("-") for w in words if len(w.strip("-")) >= 4 and w not in STOPWORDS]
+    bad = {"сегодня","вчера","новости","пост","канал","видео","фото","update","news","breaking","official"}
+    clean = [w for w in clean if w not in bad]
+    return " ".join(clean[:max_len]) or (title or "").strip()[:60]
+
+def fetch_pexels_image(query: str, min_width=1200, orientation="landscape", locale="ru-RU"):
+    if not PEXELS_API_KEY:
+        return None
+    headers = {"Authorization": PEXELS_API_KEY}
+    params = {
+        "query": query,
+        "per_page": 1,
+        "orientation": orientation,
+        "size": "large",
+        "locale": locale,
+    }
+    backoff = 1.0
+    for _ in range(3):
+        try:
+            r = requests.get(PEXELS_SEARCH_URL, headers=headers, params=params, timeout=15)
+            if r.status_code == 429:
+                time.sleep(backoff); backoff *= 2; continue
+            r.raise_for_status()
+            data = r.json()
+            photos = data.get("photos") or []
+            if not photos:
+                if locale == "ru-RU":
+                    locale = "en-US"
+                    continue
+                return None
+            src = (photos[0] or {}).get("src") or {}
+            for key in ("large2x","original","large","landscape"):
+                url = src.get(key)
+                if url:
+                    return url
+            return src.get("medium") or src.get("small") or None
+        except Exception:
+            time.sleep(backoff); backoff *= 2
+    return None
+
+def choose_image_for_item(title: str, text: str):
+    q = _keywords_from_title_text(title, text, max_len=5)
+    return fetch_pexels_image(q) or fetch_pexels_image(q, locale="en-US")
 
 # -----------------------------
 # Telegram gather (via RSSHub URLs from config)
