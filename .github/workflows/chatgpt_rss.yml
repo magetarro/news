@@ -45,6 +45,7 @@ jobs:
           MAX_PER_MODE: "5"
           MAX_CHARS_PER_ITEM: "900"
           MAX_TOTAL_CHARS: "9000"
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           python scripts/chatgpt_build_rss.py
 
